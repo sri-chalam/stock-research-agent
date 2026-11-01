@@ -98,10 +98,8 @@ Do not modify existing tests to follow this rule unless explicitly asked.
 ## 9. What Not To Do
 - **No `System.out` / `System.err`** - use SLF4J logger.
 - **No hardcoded credentials** - use `gradle.properties` (git-ignored) or env vars.
-- **Do not edit `metadata.json`** for runtime config - it is the infrastructure source of truth for deployment tooling.
 - **Do not run `./gradlew test` as the final verification step** - always use `./gradlew build` so Spotless formatting is applied before committing.
 - **Do not skip tests** in local builds (`-x test` is reserved for Docker layer caching only).
-- **Do not change JVM heap flags** here - they are controlled by the ECS task definition via `JAVA_OPTS`.
 - **Do not add JVM args to `tasks.withType<Test>`** to work around local or sandbox environment restrictions (e.g. `-Djava.io.tmpdir`, `-XX:+EnableDynamicAgentLoading`, `-Djdk.attach.allowAttachSelf`).
 - **No reactive programming** - do not use `Flux`, `Mono`, Spring WebFlux, or any Project Reactor type.
 
