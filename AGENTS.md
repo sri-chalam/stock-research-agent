@@ -1,0 +1,176 @@
+# Stock Research Agent - AGENTS.md
+
+## Sections
+
+1. Project Overview
+2. Tech Stack
+3. Project Structure
+4. Development / Build Commands
+5. Code Style
+6. Logging Conventions
+7. Architecture
+8. Testing Guidelines
+9. What Not To Do
+10. Performance Requirements
+11. Concurrency
+12. AI Assistant Guidelines
+13. Git Conventions
+
+## 1. Project Overview
+
+Equity Research & Portfolio Watch: a multi-agent AI assistant for individual investors, built in Java with Spring Boot, LangChain4j and MCP tool servers. It answers research questions (market data, news, SEC filings via RAG, macro data), analyzes paper-portfolio risk, produces a scheduled morning brief, and proposes paper trades that require explicit user approval. It is a research and monitoring tool only: no real trading, no personalized investment advice.
+
+Full requirements: @docs/requirements/stock-research-agent-spec.md
+
+
+## 2. Tech Stack
+
+| Layer | Technology |
+|---|---|
+| Language | Java 25 |
+| Framework | Spring Boot 4.1.2 |
+| JSON | Jackson (do not use Gson, Moshi, or other JSON libraries) |
+| Build | Gradle 9 (Kotlin DSL), Spotless (google-java-format), dependency versions in `gradle/libs.versions.toml` |
+| AI framework | LangChain4j (core + Anthropic provider managed by the BOM; `langchain4j-agentic` and `langchain4j-mcp` are beta, pin exact versions) |
+| LLMs | Claude Haiku 5.5 (`claude-haiku-5-5`) by default; Claude Sonnet 5.5 (`claude-sonnet-5-5`) only where evals justify it. Model IDs are configured per agent in `application.yml`, never hard-coded |
+| MCP | Model Context Protocol: tools are exposed by our own Java MCP servers (Streamable HTTP, stateless) and consumed by agents only through the LangChain4j MCP client. Agents never call data providers directly; upstream API keys stay inside the MCP servers |
+| Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache) |
+| Cache / session | Redis (rate-limit counters, session state) |
+| Logging | SLF4J 2 + Logback |
+| Testing | JUnit Jupiter + AssertJ, WireMock (LLM and HTTP stubs), Testcontainers (Postgres/pgvector, Redis); versions managed by the Spring Boot BOM where available |
+| Container | Amazon Corretto 25 Alpine |
+
+## 3. Project Structure
+
+Package by layer under `info.saagar.stockagent`:
+
+| Package | Contents |
+|---|---|
+
+
+## 4. Development / Build Commands
+```bash
+./gradlew build        # preferred over `./gradlew test` alone - runs Spotless formatting + tests + jar
+./gradlew test         # run tests only
+./gradlew clean build  # full clean build
+```
+
+## 5. Code Style
+
+- UTF-8 encoding enforced in compileJava.
+- Utility / entry-point classes are final with a private constructor.
+- All new or modified public/protected methods must include Java 25 markdown Javadoc (/// syntax).
+- Method parameters and local variables must use meaningful, descriptive names (e.g., startDateStr, endDateStr) - never single-letter or generic names like a, b, s.
+- Variable names must reflect business purpose, not implementation mechanics. Prefer attributesByInsightMap over grouped, pendingDispatchQueue over queue, insightAttributeMap over map.
+
+## 6. Logging Conventions
+
+- Use SLF4J (LoggerFactory.getLogger(ClassName.class)) - never System.out.
+- Only structured logging is allowed. Plain string messages are not permitted.
+- Do not call logger.info("some message") or any unstructured log call - always include key/value context fields.
+- Every log message must have the fields eventName.
+- No `methodName` and no `timestamp` fields (see `docs/logging/java-logging-guidelines.md` for why).
+- For detailed logging instructions, see the file @docs/logging/logging-guidelines.md
+- For Java-specific logging instructions, see the file @docs/logging/java-logging-guidelines.md
+
+## 7. Architecture
+
+For any new class that calls an external service (AWS SDK, HTTP clients, third-party SDKs):
+- The call must go behind an interface.
+- The new class containing business logic must depend on the interface, not the SDK directly.
+- Do not refactor existing classes to follow this rule unless explicitly asked.
+- Library selection must be justified against the service's core goals. Any new library introduced must demonstrably support high throughput and low latency.
+
+## 8. Testing Guidelines
+
+<!-- AssertJ also produces far more useful failure messages out of the box, and handles collections, optionals, and exceptions more fluently than Jupiter.
+Jupiter assertions are fine for simple cases, but AssertJ is the de facto standard in modern Java projects. -->
+- Use AssertJ for assertions (`assertThat(...).isEqualTo(...)`, `assertThatThrownBy(...)`, etc.).
+- Tests must pass with `./gradlew test`
+- Use the junit-best-practices skill (auto-triggered on test files)
+
+For new classes:
+- Unit tests wire real collaborators; use a fake (in-memory) implementation at the interface boundary.
+- Do not use `@Mock` on classes that contain business logic.
+
+Do not modify existing tests to follow this rule unless explicitly asked.
+
+## 9. What Not To Do
+- **No `System.out` / `System.err`** - use SLF4J logger.
+- **No hardcoded credentials** - use `gradle.properties` (git-ignored) or env vars.
+- **Do not edit `metadata.json`** for runtime config - it is the infrastructure source of truth for deployment tooling.
+- **Do not run `./gradlew test` as the final verification step** - always use `./gradlew build` so Spotless formatting is applied before committing.
+- **Do not skip tests** in local builds (`-x test` is reserved for Docker layer caching only).
+- **Do not change JVM heap flags** here - they are controlled by the ECS task definition via `JAVA_OPTS`.
+- **Do not add JVM args to `tasks.withType<Test>`** to work around local or sandbox environment restrictions (e.g. `-Djava.io.tmpdir`, `-XX:+EnableDynamicAgentLoading`, `-Djdk.attach.allowAttachSelf`).
+- **No reactive programming** - do not use `Flux`, `Mono`, Spring WebFlux, or any Project Reactor type.
+
+## 10. Performance Requirements
+The following are **critical** performance requirements for this service. Both goals carry equal weight. Only when a specific code block forces a trade-off between the two should low latency be prioritized.
+
+- **High throughput** - the service must sustain a high volume of message dispatches continuously.
+- **Low latency** - each message dispatch must complete with minimal delay.
+
+All implementation, bug fixes, and updates must treat both as first-class constraints.
+
+- Minimise object allocations in hot paths to reduce GC pressure.
+- Avoid unnecessary synchronisation; prefer fine-grained locking or lock-free structures where contention is a concern.
+- Do not introduce blocking calls on threads that handle message dispatch.
+
+## 11. Concurrency
+
+- When using `CompletableFuture`, always pass a custom thread pool - never rely on the common fork-join pool.
+- The custom thread pool must use virtual threads (e.g., `Executors.newVirtualThreadPerTaskExecutor()`).
+
+
+## 12. AI Assistant Guidelines
+*Sourced from Andrej Karpathy's suggestions.*
+
+**Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
+
+### 12.1 Think Before Coding
+
+**Don't assume. Don't hide confusion. Surface tradeoffs.**
+
+Before implementing:
+- State your assumptions explicitly. If uncertain, ask.
+- If multiple interpretations exist, present them - don't pick silently.
+- If a simpler approach exists, say so. Push back when warranted.
+- If something is unclear, stop. Name what's confusing. Ask.
+
+### 12.2 Simplicity First
+
+**Minimum code that solves the problem. Nothing speculative.**
+
+- No features beyond what was asked.
+- No abstractions for single-use code.
+- No "flexibility" or "configurability" that wasn't requested.
+- No error handling for impossible scenarios.
+- If you write 200 lines and it could be 50, rewrite it.
+
+Ask yourself: "Would a senior engineer say this is overcomplicated?" If yes, simplify.
+
+### 12.3 Surgical Changes
+
+**Touch only what you must. Clean up only your own mess.**
+
+When editing existing code:
+- Don't "improve" adjacent code, comments, or formatting.
+- Don't refactor things that aren't broken.
+- Match existing style, even if you'd do it differently.
+- If you notice unrelated dead code, mention it - don't delete it.
+
+When your changes create orphans:
+- Remove imports/variables/functions that YOUR changes made unused.
+- Don't remove pre-existing dead code unless asked.
+
+### 12.4 Goal-Driven Execution
+
+- Before starting, state what "done" looks like in one verifiable sentence.
+- If success criteria are missing or vague, ask - don't invent them.
+- For any feature or bug fix, if the Jira issue has no acceptance criteria, ask the developer before coding.
+
+## 13. Git Conventions
+
+- When a git worktree is needed, place it at `../worktree/<feature-name>` relative to the project root. No `.gitignore` entry is required.
+
