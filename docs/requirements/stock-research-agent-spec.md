@@ -367,7 +367,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - GW-5: OpenTelemetry export from Bifrost joins the application's traces.
 - GW-6: Measure token usage **with and without Bifrost Code Mode** and record the results (vendor claims 50%+ savings; verify).
 - GW-7: Resolve the single-retry-layer rule (FR-38).
-- GW-8: Known limits of the open-source edition: federated MCP auth, guardrails, audit-log governance and vault support are enterprise-only. User-scoped OAuth remains implemented in Spring Security (Section 9).
+- GW-8: Known limits of the open-source edition: federated MCP auth, guardrails, audit-log governance and vault support are enterprise-only. User-scoped OAuth remains implemented in Spring Security (Section 9). Open-source Bifrost validates only JWTs it issues itself; validating external IdP (WorkOS) JWTs at the gateway is an Enterprise feature, so the MCP servers keep validating the forwarded user token (see ADR 0001; re-verify in Iteration 6).
 - GW-9: README section: "How this maps to AWS Bedrock AgentCore Gateway in production" (API/Lambda-to-MCP conversion, Cedar-based AgentCore Policy per tool call).
 
 ## 11. Single-Page Chat GUI
@@ -491,7 +491,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-3 | WorkOS support for RFC 8693 token exchange | Verify; choose Option A or B (Section 9.3) |
 | R-4 | Free-tier data limits (Alpha Vantage 25/day; Finnhub no candles) | Aggressive caching; Tiingo as alternative for price history |
 | R-5 | Data licensing (Finnhub personal use only) | Keep repo free of recorded licensed data; no public hosted demo; share via video |
-| R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security |
+| R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security. OSS Bifrost cannot validate WorkOS JWTs (Enterprise only), so MCP servers validate the user token (ADR 0001) |
 | R-7 | Haiku 5.5 sufficiency for Supervisor/Filings/Risk | Decide per agent using evals |
 | R-8 | Haiku 5.5 price jump above 100K-token prompts (cache reads count) | Enforce prompt-size budget; alert near threshold |
 | R-9 | Fargate Spot interruptions | Acceptable for a demo; tasks restart automatically |
