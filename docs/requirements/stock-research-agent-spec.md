@@ -398,7 +398,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-7: Prompts kept under 100K tokens.
 - NFR-8: Tool outputs trimmed; history summarized.
 - NFR-9: Dashboard: tokens in/out/cached per agent, cost per request, cost per user per day, semantic-cache savings.
-- NFR-10: AWS Budget alert (e.g., $10/month).
+- NFR-10: AWS Budget alert (e.g., $10/month). A lower threshold (e.g., $5) is created before the first deployment in Iteration 2b.
 
 ### 12.3 Observability
 - NFR-11: OpenTelemetry trace per run with spans for classifier, cache lookup, each agent, each LLM call (model, prompt version, tokens, cached tokens, latency, cost) and each tool call (tool, args summary, latency, result size, error).
@@ -428,7 +428,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - DEP-4: **No NAT gateway**: tasks in public subnets with public IPs and tight security groups.
 - DEP-5: API keys in **SSM Parameter Store** (SecureString, standard tier) rather than Secrets Manager.
 - DEP-6: Database is disposable: Postgres/pgvector as a container or snapshot-restored instance; a post-deploy step re-hydrates embeddings from S3.
-- DEP-7: `RemovalPolicy.DESTROY` on log groups and all ephemeral resources.
+- DEP-7: `RemovalPolicy.DESTROY` on log groups and all ephemeral resources. Until `nightly-destroy.yml` exists, `scripts/aws-teardown.sh` is run at the end of every working session (ADR 0005).
 - DEP-8: Workflows:
 
 | Workflow | Trigger | Action |
@@ -455,6 +455,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
 | **1** | Own MCP servers | `market-data-mcp` (Finnhub + fallback), `filings-mcp` (EDGAR), `macro-mcp` (FRED); Streamable HTTP; agent uses MCP client | Agent answers using MCP tools only; upstream keys only in MCP servers; rate limiting and upstream caching work |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; export to S3; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
+| **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
 | **3b–3d** | Add agents | News & sentiment → Portfolio risk → Critic | Each addition has eval cases; Critic catches seeded wrong numbers |
 | **4** | Semantic cache + model routing | Intent/freshness classifier; freshness-aware cache; per-agent model config; token/cost dashboard | Real-time questions never cached; cache hit rate and tokens saved visible; Haiku vs Sonnet decision documented with eval numbers |
@@ -462,7 +463,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
 | **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; audit log complete |
 | **8** | Resilience + async | Per-step retry, circuit breaker, fallback model, provider fallback; morning brief with M2M token and Batch API | WireMock resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
-| **9** | Production | Full OpenTelemetry tracing; evals in CI; CDK stacks; GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
+| **9** | Production | Full OpenTelemetry tracing; evals in CI; complete CDK stacks (extends the Iteration 2b stack with Bifrost and persistent resources); GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
 | **10** *(optional)* | LangGraph4j comparison | Re-implement the paper-trade approval flow with a checkpointed LangGraph4j graph | README compares LangChain4j agentic vs LangGraph4j for durable pause/resume |
 | **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share with interviewers |
 
