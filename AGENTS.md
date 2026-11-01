@@ -172,3 +172,17 @@ When your changes create orphans:
 
 - When a git worktree is needed, place it at `../worktree/<feature-name>` relative to the project root. No `.gitignore` entry is required.
 
+
+## Agent skills
+
+### Issue tracker
+
+Issues are local markdown files under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-role vocabulary (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `GLOSSARY.md` + `docs/adr/`. See `docs/agents/domain.md`.
