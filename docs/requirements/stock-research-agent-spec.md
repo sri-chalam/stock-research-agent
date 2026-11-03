@@ -55,7 +55,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 - US equities only (matches the Finnhub free tier).
 - Paper portfolio and watchlist per user.
 - Research answers grounded in market data, news, SEC filings and macro data.
-- Personal, non-commercial use; each user supplies their own data-provider API keys.
+- Personal, non-commercial use; the person deploying the app supplies the data-provider API keys, shared by all users.
 
 ### Non-goals
 - **No real trading** and no brokerage integration.
@@ -132,7 +132,6 @@ flowchart TB
     BF --> PF[portfolio-mcp]
 
     MD --> FH[Finnhub API]
-    MD --> AV[Alpha Vantage / Tiingo]
     FL --> SEC[SEC EDGAR]
     MC --> FRED[FRED API]
     PF --> PG[(PostgreSQL)]
@@ -173,7 +172,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | 1 | **Supervisor** | Understand request, plan, delegate to specialists, merge results | Specialist agents | Haiku 5.5 (Sonnet if evals require) | Iteration 3 |
 | 2 | **Filings analyst** | Answer from 10-K/10-Q/8-K via RAG, with section citations | filings-mcp, pgvector | Haiku 5.5 (Sonnet candidate) | Iteration 3 |
-| 3 | **Market data agent** | Quotes, price history, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 3 |
+| 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 3 |
 | 4 | **News & sentiment agent** | Summarize company/market news; treats articles as **untrusted input** | market-data-mcp (news) | Haiku 5.5 | Iteration 3b |
 | 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp, macro-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
 | 6 | **Critic** | Verify every number and claim in the draft answer against tool outputs before returning | Tool outputs of the run | Haiku 5.5 | Iteration 3d |
@@ -205,7 +204,7 @@ flowchart TD
 
 | MCP server | Tools (initial) | Upstream source | Auth to upstream |
 |---|---|---|---|
-| **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to)`, `getPriceHistory(symbol, range)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings); Alpha Vantage or Tiingo (price history) | API keys held **only** in this server's environment |
+| **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
 | **filings-mcp** | `listFilings(ticker, formType)`, `getFilingSection(ticker, accession, section)`, `getCompanyFacts(ticker, concept)` (XBRL), `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
 | **macro-mcp** | `getSeries(seriesId, range)` (e.g., CPI, fed funds, 10Y yield), `searchSeries(query)` | FRED | Free API key |
 | **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
@@ -214,7 +213,7 @@ Requirements:
 - MCP-1: Upstream API keys never leave the MCP server; they are never passed to the agent or the LLM.
 - MCP-2: Tool results are trimmed to the fields the model needs (no raw JSON/HTML dumps).
 - MCP-3: Each server enforces upstream rate limits (token bucket) and caches upstream responses with TTLs suited to the data (quotes seconds; profiles days; filings indefinitely).
-- MCP-4: Provider fallback where possible (e.g., quote: Finnhub → Alpha Vantage).
+- MCP-4: No provider fallback; Finnhub is the only market-data source (ADR 0007).
 - MCP-5: Tool errors return clear, model-readable messages (e.g., "International symbols are not supported on the free tier").
 - MCP-6: Servers are OAuth 2.1 resource servers (from Iteration 5): validate JWT signature, issuer, expiry, **audience = this server's URL**, and scopes.
 - MCP-7: Community MCP servers (e.g., open-source Finnhub MCP servers) may be run locally for exploration and comparison, but the application uses its own Java servers.
@@ -224,8 +223,6 @@ Requirements:
 | Source | Data | Key | Free-tier limits | Terms to respect |
 |---|---|---|---|---|
 | **Finnhub** | Real-time US quotes, news, profiles, earnings calendar | Free key | US equities only, ~60 req/min; candles and international are paid | Free tier is **personal use only**; no redistribution |
-| **Alpha Vantage** | Daily price history, fundamentals | Free key | ~25 req/day | Cache aggressively |
-| **Tiingo** (alternative) | Price history | Free key | Limited hourly/daily quotas | Personal use |
 | **SEC EDGAR** | 10-K, 10-Q, 8-K, XBRL company facts | None | ≤10 req/sec | User-Agent with contact details |
 | **FRED** | Macro series | Free key | Generous | FRED terms of use |
 
@@ -271,7 +268,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-21: The agent may only **propose** a paper trade via `proposePaperTrade`, which creates a `PendingAction` (status `PENDING`) and returns its ID.
 - FR-22: The UI shows pending actions with Approve / Reject buttons; approval calls `POST /actions/{id}/approve`, executed by deterministic code (not the LLM).
 - FR-23: Pending actions expire after a configurable time (default 15 minutes).
-- FR-24: All proposals, approvals and rejections are written to an audit log.
+- FR-24: Each `PendingAction` records its status (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`) and decision timestamps. There is no separate audit log.
 - FR-25: Changes to alert rules follow the same pattern.
 
 ### 8.7 Morning brief (async / scheduled)
@@ -295,7 +292,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-37: **Retry per LLM step, never the whole agent run** (tools with side effects must not re-execute).
 - FR-38: **Exactly one retry layer**: before Iteration 6, LangChain4j/application code; after Iteration 6, decide between Bifrost and application code, and disable the other.
 - FR-39: Circuit breaker on the primary model; fallback model (e.g., Sonnet ↔ Haiku) when open.
-- FR-40: Data-provider fallback inside MCP servers (FR MCP-4).
+- FR-40: No data-provider fallback (see MCP-4).
 - FR-41: Graceful degradation messages when a provider is unavailable.
 
 ### 8.11 API (agent app)
@@ -453,7 +450,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | # | Iteration | Scope | Acceptance criteria |
 |---|---|---|---|
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
-| **1** | Own MCP servers | `market-data-mcp` (Finnhub + fallback), `filings-mcp` (EDGAR), `macro-mcp` (FRED); Streamable HTTP; agent uses MCP client | Agent answers using MCP tools only; upstream keys only in MCP servers; rate limiting and upstream caching work |
+| **1** | Own MCP servers | `market-data-mcp` (Finnhub), `filings-mcp` (EDGAR), `macro-mcp` (FRED); Streamable HTTP; agent uses MCP client | Agent answers using MCP tools only; upstream keys only in MCP servers; rate limiting and upstream caching work |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; export to S3; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
@@ -461,8 +458,8 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **4** | Semantic cache + model routing | Intent/freshness classifier; freshness-aware cache; per-agent model config; token/cost dashboard | Real-time questions never cached; cache hit rate and tokens saved visible; Haiku vs Sonnet decision documented with eval numbers |
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
-| **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; audit log complete |
-| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model, provider fallback; morning brief with M2M token and Batch API | WireMock resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
+| **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; every action ends with a recorded status |
+| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | WireMock resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
 | **9** | Production | Full OpenTelemetry tracing; evals in CI; complete CDK stacks (extends the Iteration 2b stack with Bifrost and persistent resources); GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
 | **10** *(optional)* | LangGraph4j comparison | Re-implement the paper-trade approval flow with a checkpointed LangGraph4j graph | README compares LangChain4j agentic vs LangGraph4j for durable pause/resume |
 | **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share with interviewers |
@@ -490,7 +487,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-1 | LangChain4j Spring Boot starters' compatibility with Spring Boot 4.1.1 | Verify in Iteration 0; fall back to manual bean configuration if starters lag |
 | R-2 | `langchain4j-agentic` and `langchain4j-mcp` are beta; APIs change between releases | Pin exact versions; wrap in thin adapters |
 | R-3 | WorkOS support for RFC 8693 token exchange | Verify; choose Option A or B (Section 9.3) |
-| R-4 | Free-tier data limits (Alpha Vantage 25/day; Finnhub no candles) | Aggressive caching; Tiingo as alternative for price history |
+| R-4 | Free-tier data limits (Finnhub has no candles, so no price history) | Aggressive caching; add a single history provider later if needed |
 | R-5 | Data licensing (Finnhub personal use only) | Keep repo free of recorded licensed data; no public hosted demo; share via video |
 | R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security. OSS Bifrost cannot validate WorkOS JWTs (Enterprise only), so MCP servers validate the user token (ADR 0001) |
 | R-7 | Haiku 5.5 sufficiency for Supervisor/Filings/Risk | Decide per agent using evals |
