@@ -85,7 +85,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 |---|---|---|
 | Language | Java 21 or 25 (LTS) | Virtual threads enabled for LLM- and I/O-bound work |
 | Framework | **Spring Boot 4.1.1** | Spring Security, Actuator, Micrometer |
-| AI framework | **LangChain4j** (core 1.15.x GA) + `langchain4j-agentic` + `langchain4j-mcp` | Agentic and MCP modules are beta: **pin exact versions** (they are not managed by the BOM). Verify latest versions and Boot 4 compatibility in Iteration 0. |
+| AI framework | **LangChain4j** (core 1.23.0 GA) + `langchain4j-agentic` + `langchain4j-mcp` | Agentic and MCP modules are beta: **pin exact versions** (they are not managed by the BOM). Verify latest versions and Boot 4 compatibility in Iteration 0. |
 | LLMs | **Claude Haiku 5.5** (`claude-haiku-5-5`) by default; **Claude Sonnet 5.5** (`claude-sonnet-5-5`) only for agents where evals show Haiku falls short | Model configurable **per agent** in `application.yml` |
 | MCP servers | Own Java MCP servers (Spring Boot + LangChain4j/MCP Java SDK), Streamable HTTP | Community servers may be used for exploration only |
 | MCP / LLM gateway | **Bifrost** (open source, Apache 2.0), Docker | Iteration 6 |
@@ -401,6 +401,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-11: OpenTelemetry trace per run with spans for classifier, cache lookup, each agent, each LLM call (model, prompt version, tokens, cached tokens, latency, cost) and each tool call (tool, args summary, latency, result size, error).
 - NFR-12: Structured JSON logs with trace IDs; PII and secrets redacted.
 - NFR-13: Metrics and alerts: error rate, p95 latency, retries, circuit-breaker state, guardrail blocks, loop-limit hits, Critic rejections.
+- NFR-13a: Each run ends with one structured log line (`eventName` `answerProvenance`) listing the agents and tools that produced the answer, with the trace ID, so one query answers US-8.
 
 ### 12.4 Quality and evals
 - NFR-14: Golden eval set: ~40 questions at Iteration 2, growing to 100+ (quotes, filings, news, portfolio, adversarial/injection, out-of-scope).
