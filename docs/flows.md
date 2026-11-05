@@ -4,10 +4,14 @@ What happens, step by step, for each thing a user does. Spec IDs point to [stock
 
 ## Sign-in
 
-1. The user opens the single page (`index.html`).
-2. The page redirects to WorkOS AuthKit, which handles sign-up and sign-in with Authorization Code + PKCE (SEC-1).
-3. WorkOS returns an access token. The page sends it as a Bearer header on every API call.
-4. The agent app validates signature, issuer, expiry, audience and scopes (SEC-3). The user is identified from the token, never from prompt text (SEC-4).
+1. The user opens the single page (`index.html`). The page holds no token in memory, so it saves a random `state` and redirects to WorkOS AuthKit with a PKCE `code_challenge`. AuthKit handles sign-up and sign-in with Authorization Code + PKCE (SEC-1).
+2. After the user authenticates, WorkOS redirects back to the page with `code` and `state`.
+3. The page checks that `state` matches the saved value. It then exchanges `code` and the PKCE `code_verifier` for an access token at the WorkOS token endpoint.
+4. The page keeps the token in memory (not `localStorage`), removes `code` and `state` from the URL, and reads `exp` from the token claims. It does not verify the signature. The token came straight from the WorkOS token endpoint over TLS, and the agent app validates it on every call.
+5. If `exp` is in the future, the page shows the chat window. Otherwise it restarts the login, or uses the refresh token if it has one. This check only decides whether to show the chat window. It is not a security control.
+6. The page sends the token as a Bearer header on every API call. The agent app validates signature, issuer, expiry, audience and scopes (SEC-3). The user is identified from the token, never from prompt text (SEC-4). A 401 or 403 sends the user back to step 1.
+
+A page refresh loses the in-memory token, so the page repeats step 1 (a silent login or refresh).
 
 Open: who may sign up ([OD-1](open-decisions.md)) and when the app creates the user's rows ([OD-2](open-decisions.md)).
 
@@ -22,7 +26,7 @@ Open: whether the page has a watchlist editor ([OD-4](open-decisions.md)) and wh
 
 ## Quote
 
-1. The user asks for a price, such as "price of Apple".
+1. In the chat window's prompt box, the user asks for a price, such as "price of Apple".
 2. The classifier labels it `QUOTE` with freshness `REAL_TIME` (FR-4).
 3. The app calls `getQuote` on `market-data-mcp` directly, with no cache and no multi-agent run (FR-5).
 4. The answer returns with its source.

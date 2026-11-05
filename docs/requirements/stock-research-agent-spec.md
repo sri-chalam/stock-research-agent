@@ -87,16 +87,16 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 | Framework | **Spring Boot 4.1.1** | Spring Security, Actuator, Micrometer |
 | AI framework | **LangChain4j** (core 1.23.0 GA) + `langchain4j-agentic` + `langchain4j-mcp` | Agentic and MCP modules are beta: **pin exact versions** (they are not managed by the BOM). Verify latest versions and Boot 4 compatibility in Iteration 0. |
 | LLMs | **Claude Haiku 5.5** (`claude-haiku-5-5`) by default; **Claude Sonnet 5.5** (`claude-sonnet-5-5`) only for agents where evals show Haiku falls short | Model configurable **per agent** in `application.yml` |
-| MCP servers | Own Java MCP servers (Spring Boot + LangChain4j/MCP Java SDK), Streamable HTTP | Community servers may be used for exploration only |
+| MCP servers | Own Java MCP servers (Spring Boot + LangChain4j/MCP Java SDK), Streamable HTTP | |
 | MCP / LLM gateway | **Bifrost** (open source, Apache 2.0), Docker | Iteration 6 |
 | Identity | **WorkOS AuthKit** (OAuth 2.1 + PKCE, M2M client credentials) | Free up to 1M MAU; Keycloak as alternative for token exchange |
 | Vector store | PostgreSQL + **pgvector** | Filings RAG and semantic cache (or Redis for cache) |
 | Cache / session | Redis | Semantic cache entries, rate-limit counters, session state |
 | Relational DB | PostgreSQL | Users' portfolios, watchlists, pending actions, memory |
 | GUI | Single `index.html` + plain JavaScript + classless CSS (Pico.css) | Served by the agent app; SSE streaming |
-| Observability | Micrometer + OpenTelemetry → Grafana/Datadog | Traces per agent step |
-| Testing | JUnit 5, WireMock, Testcontainers | Plus eval suite |
-| Build | Gradle (or Maven) | |
+| Observability | Micrometer + OpenTelemetry → Grafana | Traces per agent step |
+| Testing | JUnit 5 | Plus eval suite |
+| Build | Gradle | |
 | IaC / CI/CD | **AWS CDK** (Java or TypeScript), **GitHub Actions** with OIDC | |
 | Runtime | **AWS ECS on Fargate Spot** | Ephemeral; destroyed when not in use |
 | Local dev | Docker Compose | Agent app, MCP servers, Postgres/pgvector, Redis, Bifrost |
@@ -139,7 +139,7 @@ flowchart TB
     APP <--> PGV[(Postgres + pgvector)]
     APP <--> RD[(Redis)]
     JOB[Morning-brief scheduler] -- "M2M token" --> APP
-    APP -. traces / metrics .-> OBS[OpenTelemetry → Grafana / Datadog]
+    APP -. traces / metrics .-> OBS[OpenTelemetry → Grafana]
 ```
 
 Before Iteration 6, the agent app connects to MCP servers and Anthropic directly; Bifrost is inserted later without code changes beyond configuration.
@@ -186,7 +186,7 @@ flowchart TD
 | Intent & freshness classifier | Single small LLM call (Haiku) with structured output | One decision, no loop needed |
 | Semantic cache | Code + embedding store | Deterministic |
 | Morning-brief scheduler | Spring `@Scheduled` / background job | Deterministic trigger |
-| Paper-trade approval | `PendingAction` table + REST endpoints | Must be deterministic and auditable |
+| Paper-trade approval | `PendingAction` table + REST endpoints | Must be deterministic |
 | MCP servers | Ordinary services | Expose tools; no reasoning |
 
 ### 6.3 Agent requirements
@@ -268,7 +268,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-21: The agent may only **propose** a paper trade via `proposePaperTrade`, which creates a `PendingAction` (status `PENDING`) and returns its ID.
 - FR-22: The UI shows pending actions with Approve / Reject buttons; approval calls `POST /actions/{id}/approve`, executed by deterministic code (not the LLM).
 - FR-23: Pending actions expire after a configurable time (default 15 minutes).
-- FR-24: Each `PendingAction` records its status (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`) and decision timestamps. There is no separate audit log.
+- FR-24: Each `PendingAction` records its status (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`) and decision timestamps.
 - FR-25: Changes to alert rules follow the same pattern.
 
 ### 8.7 Morning brief (async / scheduled)
@@ -411,8 +411,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 
 ### 12.5 Testing
 - NFR-18: Unit tests for tools, parsers, classifier mapping, cache logic.
-- NFR-19: WireMock tests for LLM retry behavior (503 → 529 → 200 succeeds; 400 not retried; tool executed exactly once when a later LLM step fails).
-- NFR-20: Testcontainers for Postgres/pgvector and Redis.
+- NFR-19: JUnit tests for LLM retry behavior using a fake chat model (503 → 529 → 200 succeeds; 400 not retried; tool executed exactly once when a later LLM step fails).
 - NFR-21: Security tests: missing/expired/wrong-audience tokens rejected; cross-user portfolio access denied; prompt-injection test cases.
 
 ## 13. Deployment: GitHub Actions, AWS CDK, ECS Fargate Spot
@@ -460,7 +459,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
 | **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; every action ends with a recorded status |
-| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | WireMock resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
+| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | JUnit resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
 | **9** | Production | Full OpenTelemetry tracing; evals in CI; complete CDK stacks (extends the Iteration 2b stack with Bifrost and persistent resources); GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
 | **10** *(optional)* | LangGraph4j comparison | Re-implement the paper-trade approval flow with a checkpointed LangGraph4j graph | README compares LangChain4j agentic vs LangGraph4j for durable pause/resume |
 | **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share with interviewers |
@@ -477,7 +476,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | How do you authorize users / where does OAuth go? | Iteration 5 — WorkOS AuthKit, resource servers, audience validation, ownership checks, M2M |
 | How do you reduce token usage? | Iteration 4 — semantic cache, classifier routing, Haiku default, prompt caching, trimmed tool outputs, <100K prompts, Batch API, Code Mode |
 | Have you built an AI agent? | The whole project: six agents, MCP servers, RAG, HITL |
-| Build an agent that retries LLM calls on 5xx | Iteration 8 — per-step retry, circuit breaker, fallback, WireMock tests |
+| Build an agent that retries LLM calls on 5xx | Iteration 8 — per-step retry, circuit breaker, fallback, JUnit tests |
 | Workflow vs agent? | Section 6.2 — components that are deliberately not agents |
 | Spring AI vs LangChain? | LangChain4j agentic used; optional LangGraph4j comparison (Iteration 10) |
 
@@ -498,7 +497,6 @@ Each iteration ends with working, tested, committed code and a short README upda
 | Q-1 | Java 21 vs 25? | Decide in Iteration 0 |
 | Q-2 | CDK in Java or TypeScript? | Java preferred for consistency |
 | Q-3 | Redis vs pgvector for the semantic cache? | Start with pgvector (one less dependency); revisit if latency matters |
-| Q-4 | Grafana (local) vs Datadog (free trial) for dashboards? | Decide in Iteration 4 |
 
 ## 17. Glossary
 
