@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Repository** | `stock-research-agent` (private; may be made public later for interviews) |
+| **Repository** | `stock-research-agent` (private; may be made public later) |
 | **Owner** | Sri Chalam |
 | **Status** | Draft v1.0 — October 31, 2026 |
-| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates the skills asked about in Staff-level AI interviews: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
+| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
 
 > **Suggested GitHub description:** Multi-agent stock research and portfolio assistant in Java. Built with LangChain4j, MCP tool servers, RAG over SEC filings, semantic caching, and Claude. Deployed on AWS ECS via CDK.
 >
@@ -29,9 +29,8 @@
 12. [Non-Functional Requirements](#12-non-functional-requirements)
 13. [Deployment: GitHub Actions, AWS CDK, ECS Fargate Spot](#13-deployment-github-actions-aws-cdk-ecs-fargate-spot)
 14. [Iterative Build Plan](#14-iterative-build-plan)
-15. [Interview Coverage Map](#15-interview-coverage-map)
-16. [Risks, Open Questions and Decisions to Verify](#16-risks-open-questions-and-decisions-to-verify)
-17. [Glossary](#17-glossary)
+15. [Risks, Open Questions and Decisions to Verify](#15-risks-open-questions-and-decisions-to-verify)
+16. [Glossary](#16-glossary)
 
 ---
 
@@ -462,25 +461,11 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | JUnit resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
 | **9** | Production | Full OpenTelemetry tracing; evals in CI; complete CDK stacks (extends the Iteration 2b stack with Bifrost and persistent resources); GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
 | **10** *(optional)* | LangGraph4j comparison | Re-implement the paper-trade approval flow with a checkpointed LangGraph4j graph | README compares LangChain4j agentic vs LangGraph4j for durable pause/resume |
-| **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share with interviewers |
+| **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share |
 
 **Milestone:** after Iteration 3 the project already answers "Have you built an AI agent?"; Iterations 4–9 make the answer strong.
 
-## 15. Interview Coverage Map
-
-| Interview question | Where the project demonstrates it |
-|---|---|
-| How do you deploy an agent to production? | Iterations 5, 8, 9 — guardrails, evals in CI, observability, CDK + GitHub Actions |
-| How do you scale an agentic application? | Stateless app + virtual threads, Redis/Postgres state, rate limits and budgets, async brief, Bifrost |
-| What are MCP gateways? | Iteration 6 — Bifrost with per-agent virtual keys; AgentCore mapping in README |
-| How do you authorize users / where does OAuth go? | Iteration 5 — WorkOS AuthKit, resource servers, audience validation, ownership checks, M2M |
-| How do you reduce token usage? | Iteration 4 — semantic cache, classifier routing, Haiku default, prompt caching, trimmed tool outputs, <100K prompts, Batch API, Code Mode |
-| Have you built an AI agent? | The whole project: six agents, MCP servers, RAG, HITL |
-| Build an agent that retries LLM calls on 5xx | Iteration 8 — per-step retry, circuit breaker, fallback, JUnit tests |
-| Workflow vs agent? | Section 6.2 — components that are deliberately not agents |
-| Spring AI vs LangChain? | LangChain4j agentic used; optional LangGraph4j comparison (Iteration 10) |
-
-## 16. Risks, Open Questions and Decisions to Verify
+## 15. Risks, Open Questions and Decisions to Verify
 
 | # | Item | Action |
 |---|---|---|
@@ -498,7 +483,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | Q-2 | CDK in Java or TypeScript? | Java preferred for consistency |
 | Q-3 | Redis vs pgvector for the semantic cache? | Start with pgvector (one less dependency); revisit if latency matters |
 
-## 17. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 |---|---|
