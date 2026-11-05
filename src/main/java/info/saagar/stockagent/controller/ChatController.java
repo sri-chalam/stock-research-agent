@@ -27,6 +27,10 @@ public class ChatController {
   private final QuoteAgent quoteAgent;
   private final JsonMapper jsonMapper;
 
+  /// Creates the controller.
+  ///
+  /// @param quoteAgent agent that answers prompts
+  /// @param jsonMapper mapper used to parse tool-call arguments
   public ChatController(QuoteAgent quoteAgent, JsonMapper jsonMapper) {
     this.quoteAgent = quoteAgent;
     this.jsonMapper = jsonMapper;
@@ -73,8 +77,11 @@ public class ChatController {
   }
 
   private ToolCall toToolCall(ToolExecution toolExecution) {
+    String rawArguments = toolExecution.request().arguments();
     Map<String, Object> toolArguments =
-        jsonMapper.readValue(toolExecution.request().arguments(), ARGUMENTS_TYPE);
+        rawArguments == null || rawArguments.isBlank()
+            ? Map.of()
+            : jsonMapper.readValue(rawArguments, ARGUMENTS_TYPE);
     return new ToolCall(toolExecution.request().name(), toolArguments);
   }
 }

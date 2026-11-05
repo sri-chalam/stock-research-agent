@@ -23,6 +23,7 @@ public class FakeQuoteProvider implements QuoteProvider {
           "GOOGL", quote("GOOGL", "Alphabet Inc.", "164.28", "0.12"),
           "NFLX", quote("NFLX", "Netflix, Inc.", "612.74", "-0.91"));
 
+  /// {@inheritDoc}
   @Override
   public Optional<Quote> findQuote(String tickerSymbol) {
     if (tickerSymbol == null) {

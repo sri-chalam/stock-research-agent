@@ -46,6 +46,8 @@ class ChatControllerTest {
     }
   }
 
+  private static final HttpClient HTTP_CLIENT = HttpClient.newHttpClient();
+
   @LocalServerPort private int port;
   @Autowired private JsonMapper jsonMapper;
 
@@ -58,7 +60,7 @@ class ChatControllerTest {
                     jsonMapper.writeValueAsString(new ChatController.ChatRequest(message))))
             .build();
     HttpResponse<String> httpResponse =
-        HttpClient.newHttpClient().send(chatHttpRequest, HttpResponse.BodyHandlers.ofString());
+        HTTP_CLIENT.send(chatHttpRequest, HttpResponse.BodyHandlers.ofString());
     assertThat(httpResponse.statusCode()).isEqualTo(200);
     return jsonMapper.readValue(httpResponse.body(), ChatResponse.class);
   }

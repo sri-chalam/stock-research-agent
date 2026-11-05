@@ -26,7 +26,7 @@ public record AgentProperties(Map<String, AgentSettings> agents) {
   /// @return the agent's settings
   /// @throws IllegalStateException when the agent is not configured
   public AgentSettings forAgent(String agentName) {
-    AgentSettings agentSettings = agents.get(agentName);
+    AgentSettings agentSettings = agents == null ? null : agents.get(agentName);
     if (agentSettings == null) {
       throw new IllegalStateException("No settings configured for agent " + agentName);
     }
