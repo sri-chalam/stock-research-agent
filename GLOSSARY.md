@@ -20,6 +20,8 @@ _Avoid_: "real trading", "order execution"
 
 **PendingAction**: A stored proposal, such as a paper trade or an alert-rule change, that waits for user approval. It has a status (starting at `PENDING`), expires after a configurable time (default 15 minutes), and is executed by deterministic code, never by the LLM. Its final status (`APPROVED`, `REJECTED` or `EXPIRED`) is the only record of the outcome; there is no separate audit log.
 
+**Quote**: The latest price of one US stock, with its percent change and the time the price was current (e.g., AAPL at 189.42, down 0.37%). It is real-time data, so it is never cached. Until Iteration 1 the prices are fixed fake values; afterwards they come from Finnhub through `market-data-mcp`.
+
 **SEC filing**: An official report a US public company files with the SEC, retrieved from SEC EDGAR. Answers cite the filing, section and period. The project uses three forms:
 - **10-K**: annual report, including Risk Factors and MD&A.
 - **10-Q**: quarterly report.

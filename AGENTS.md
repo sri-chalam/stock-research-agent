@@ -45,6 +45,12 @@ Package by layer under `info.saagar.stockagent`:
 
 | Package | Contents |
 |---|---|
+| `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
+| `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `QuoteAgent`) |
+| `tool` | LangChain4j `@Tool` classes (e.g. `QuoteTools`) |
+| `provider` | Interfaces over external data sources, their implementations and result records (e.g. `QuoteProvider`, `FakeQuoteProvider`, `Quote`) |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `LangChain4jConfig`) |
+| `logging` | Request-context and structured-logging support (`CorrelationContextFilter`, `GlobalExceptionHandler`, `StockAgentLogFormatter`) |
 
 
 ## 4. Development / Build Commands
