@@ -9,7 +9,7 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 ## Prerequisites
 
 - Java 25
-- Docker (for later iterations: Postgres/pgvector, Redis)
+- Docker (for later iterations: Postgres/pgvector)
 
 ## Build and run
 

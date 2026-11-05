@@ -34,10 +34,9 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 | AI framework | LangChain4j (core + Anthropic provider managed by the BOM; `langchain4j-agentic` and `langchain4j-mcp` are beta, pin exact versions) |
 | LLMs | Claude Haiku 5.5 (`claude-haiku-5-5`) by default; Claude Sonnet 5.5 (`claude-sonnet-5-5`) only where evals justify it. Model IDs are configured per agent in `application.yml`, never hard-coded |
 | MCP | Model Context Protocol: tools are exposed by our own Java MCP servers (Streamable HTTP, stateless) and consumed by agents only through the LangChain4j MCP client. Agents never call data providers directly; upstream API keys stay inside the MCP servers |
-| Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache) |
-| Cache / session | Redis (rate-limit counters, session state) |
+| Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache, session state, rate-limit counters) |
 | Logging | SLF4J 2 + Logback |
-| Testing | JUnit Jupiter + AssertJ, WireMock (LLM and HTTP stubs), Testcontainers (Postgres/pgvector, Redis); versions managed by the Spring Boot BOM where available |
+| Testing | JUnit Jupiter + AssertJ; versions managed by the Spring Boot BOM where available |
 | Container | Amazon Corretto 25 Alpine |
 
 ## 3. Project Structure
