@@ -2,10 +2,10 @@
 
 | | |
 |---|---|
-| **Repository** | `stock-research-agent` (private; may be made public later for interviews) |
+| **Repository** | `stock-research-agent` (private; may be made public later) |
 | **Owner** | Sri Chalam |
 | **Status** | Draft v1.0 — October 31, 2026 |
-| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates the skills asked about in Staff-level AI interviews: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
+| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
 
 > **Suggested GitHub description:** Multi-agent stock research and portfolio assistant in Java. Built with LangChain4j, MCP tool servers, RAG over SEC filings, semantic caching, and Claude. Deployed on AWS ECS via CDK.
 >
@@ -29,9 +29,8 @@
 12. [Non-Functional Requirements](#12-non-functional-requirements)
 13. [Deployment: GitHub Actions, AWS CDK, ECS Fargate Spot](#13-deployment-github-actions-aws-cdk-ecs-fargate-spot)
 14. [Iterative Build Plan](#14-iterative-build-plan)
-15. [Interview Coverage Map](#15-interview-coverage-map)
-16. [Risks, Open Questions and Decisions to Verify](#16-risks-open-questions-and-decisions-to-verify)
-17. [Glossary](#17-glossary)
+15. [Risks, Open Questions and Decisions to Verify](#15-risks-open-questions-and-decisions-to-verify)
+16. [Glossary](#16-glossary)
 
 ---
 
@@ -87,19 +86,18 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 | Framework | **Spring Boot 4.1.1** | Spring Security, Actuator, Micrometer |
 | AI framework | **LangChain4j** (core 1.23.0 GA) + `langchain4j-agentic` + `langchain4j-mcp` | Agentic and MCP modules are beta: **pin exact versions** (they are not managed by the BOM). Verify latest versions and Boot 4 compatibility in Iteration 0. |
 | LLMs | **Claude Haiku 5.5** (`claude-haiku-5-5`) by default; **Claude Sonnet 5.5** (`claude-sonnet-5-5`) only for agents where evals show Haiku falls short | Model configurable **per agent** in `application.yml` |
-| MCP servers | Own Java MCP servers (Spring Boot + LangChain4j/MCP Java SDK), Streamable HTTP | Community servers may be used for exploration only |
+| MCP servers | Own Java MCP servers (Spring Boot + LangChain4j/MCP Java SDK), Streamable HTTP | |
 | MCP / LLM gateway | **Bifrost** (open source, Apache 2.0), Docker | Iteration 6 |
 | Identity | **WorkOS AuthKit** (OAuth 2.1 + PKCE, M2M client credentials) | Free up to 1M MAU; Keycloak as alternative for token exchange |
-| Vector store | PostgreSQL + **pgvector** | Filings RAG and semantic cache (or Redis for cache) |
-| Cache / session | Redis | Semantic cache entries, rate-limit counters, session state |
-| Relational DB | PostgreSQL | Users' portfolios, watchlists, pending actions, memory |
+| Vector store | PostgreSQL + **pgvector** | Filings RAG and semantic cache |
+| Relational DB | PostgreSQL | Users' portfolios, watchlists, pending actions, memory, session state, rate-limit counters |
 | GUI | Single `index.html` + plain JavaScript + classless CSS (Pico.css) | Served by the agent app; SSE streaming |
-| Observability | Micrometer + OpenTelemetry → Grafana/Datadog | Traces per agent step |
-| Testing | JUnit 5, WireMock, Testcontainers | Plus eval suite |
-| Build | Gradle (or Maven) | |
+| Observability | Micrometer + OpenTelemetry → Grafana | Traces per agent step |
+| Testing | JUnit 5 | Plus eval suite |
+| Build | Gradle | |
 | IaC / CI/CD | **AWS CDK** (Java or TypeScript), **GitHub Actions** with OIDC | |
 | Runtime | **AWS ECS on Fargate Spot** | Ephemeral; destroyed when not in use |
-| Local dev | Docker Compose | Agent app, MCP servers, Postgres/pgvector, Redis, Bifrost |
+| Local dev | Docker Compose | Agent app, MCP servers, Postgres/pgvector, Bifrost |
 
 ## 5. Architecture
 
@@ -137,9 +135,8 @@ flowchart TB
     PF --> PG[(PostgreSQL)]
 
     APP <--> PGV[(Postgres + pgvector)]
-    APP <--> RD[(Redis)]
     JOB[Morning-brief scheduler] -- "M2M token" --> APP
-    APP -. traces / metrics .-> OBS[OpenTelemetry → Grafana / Datadog]
+    APP -. traces / metrics .-> OBS[OpenTelemetry → Grafana]
 ```
 
 Before Iteration 6, the agent app connects to MCP servers and Anthropic directly; Bifrost is inserted later without code changes beyond configuration.
@@ -186,7 +183,7 @@ flowchart TD
 | Intent & freshness classifier | Single small LLM call (Haiku) with structured output | One decision, no loop needed |
 | Semantic cache | Code + embedding store | Deterministic |
 | Morning-brief scheduler | Spring `@Scheduled` / background job | Deterministic trigger |
-| Paper-trade approval | `PendingAction` table + REST endpoints | Must be deterministic and auditable |
+| Paper-trade approval | `PendingAction` table + REST endpoints | Must be deterministic |
 | MCP servers | Ordinary services | Expose tools; no reasoning |
 
 ### 6.3 Agent requirements
@@ -250,14 +247,13 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-10: TTL per freshness class; `STATIC` entries invalidated when a new filing for that ticker is detected.
 - FR-11: Cached answers are marked "cached" in the UI and trace.
 - FR-12: Metrics: hit rate, tokens saved, false-hit reports (user feedback).
-- Implementation: built on LangChain4j embedding-store abstraction (pgvector or Redis); custom code is acceptable and preferred for explainability.
+- Implementation: built on LangChain4j embedding-store abstraction (pgvector); custom code is acceptable and preferred for explainability.
 
 ### 8.4 RAG over SEC filings
 - FR-13: Ingestion pipeline downloads 10-K/10-Q for a configured ticker list (initially 5–10 tickers), parses into sections (Risk Factors, MD&A, etc.), chunks (300–1000 tokens with overlap), embeds and stores with metadata (ticker, form, fiscal period, section, accession number, URL).
 - FR-14: Retrieval uses hybrid search (vector + keyword) with reranking; top-k 3–5.
 - FR-15: Answers cite filing, section and period; numbers prefer XBRL `companyfacts` over text extraction.
 - FR-16: Prompts must stay **under 100K tokens** (Haiku 5.5 pricing tier); never stuff whole filings into context.
-- FR-17: Embeddings and parsed chunks are exported to S3 so a freshly deployed environment can be re-hydrated quickly.
 
 ### 8.5 Memory
 - FR-18: Short-term memory: conversation window with rolling summary; old tool outputs dropped.
@@ -268,7 +264,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-21: The agent may only **propose** a paper trade via `proposePaperTrade`, which creates a `PendingAction` (status `PENDING`) and returns its ID.
 - FR-22: The UI shows pending actions with Approve / Reject buttons; approval calls `POST /actions/{id}/approve`, executed by deterministic code (not the LLM).
 - FR-23: Pending actions expire after a configurable time (default 15 minutes).
-- FR-24: Each `PendingAction` records its status (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`) and decision timestamps. There is no separate audit log.
+- FR-24: Each `PendingAction` records its status (`PENDING`, `APPROVED`, `REJECTED`, `EXPIRED`) and decision timestamps.
 - FR-25: Changes to alert rules follow the same pattern.
 
 ### 8.7 Morning brief (async / scheduled)
@@ -320,7 +316,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - SEC-5: Tokens, API keys and secrets are **never** placed in the LLM context or logs.
 - SEC-6: `portfolio-mcp` enforces ownership: a user can only read and modify their own portfolio, regardless of what the model requests.
 - SEC-7: The morning-brief job uses a WorkOS **M2M** application (client credentials) with the minimal scopes needed.
-- SEC-8: Scopes (initial): `agent.chat`, `portfolio.read`, `portfolio.write`, `marketdata.read`, `filings.read`, `macro.read`.
+- SEC-8: Scopes (initial): `agent.chat`, `portfolio.read`, `portfolio.write`, `marketdata.read`, `filings.read`, `macro.read`. What each scope grants and where it is enforced: see [design.md, Security → OAuth scopes](../design.md#oauth-scopes).
 
 ### 9.2 Token flow
 
@@ -385,7 +381,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 
 ### 12.1 Performance and scalability
 - NFR-1: Time to first token for research questions < 3 s (p95, excluding provider outages); quote answers < 2 s.
-- NFR-2: Agent app is stateless; session state in Redis/Postgres.
+- NFR-2: Agent app is stateless; session state in Postgres.
 - NFR-3: Virtual threads enabled (`spring.threads.virtual.enabled=true`).
 - NFR-4: Per-user concurrency and token budgets to protect provider quotas.
 
@@ -411,8 +407,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 
 ### 12.5 Testing
 - NFR-18: Unit tests for tools, parsers, classifier mapping, cache logic.
-- NFR-19: WireMock tests for LLM retry behavior (503 → 529 → 200 succeeds; 400 not retried; tool executed exactly once when a later LLM step fails).
-- NFR-20: Testcontainers for Postgres/pgvector and Redis.
+- NFR-19: JUnit tests for LLM retry behavior using a fake chat model (503 → 529 → 200 succeeds; 400 not retried; tool executed exactly once when a later LLM step fails).
 - NFR-21: Security tests: missing/expired/wrong-audience tokens rejected; cross-user portfolio access denied; prompt-injection test cases.
 
 ## 13. Deployment: GitHub Actions, AWS CDK, ECS Fargate Spot
@@ -420,27 +415,27 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 ### 13.1 Requirements
 - DEP-1: GitHub Actions authenticates to AWS via **OIDC → IAM role** (no stored access keys).
 - DEP-2: AWS CDK defines two stacks:
-  - **Persistent stack** (stays deployed, near-zero cost): ECR repositories, SSM parameters, S3 bucket for embeddings/chunks exports.
-  - **Ephemeral stack** (created/destroyed on demand): VPC, ALB, ECS cluster and services, database, Redis, Bifrost.
+  - **Persistent stack** (stays deployed, near-zero cost): ECR repositories, SSM parameters.
+  - **Ephemeral stack** (created/destroyed on demand): VPC, ALB, ECS cluster and services, database, Bifrost.
 - DEP-3: ECS services run on **Fargate Spot** capacity provider.
 - DEP-4: **No NAT gateway**: tasks in public subnets with public IPs and tight security groups.
 - DEP-5: API keys in **SSM Parameter Store** (SecureString, standard tier) rather than Secrets Manager.
-- DEP-6: Database is disposable: Postgres/pgvector as a container or snapshot-restored instance; a post-deploy step re-hydrates embeddings from S3.
+- DEP-6: Database is disposable: Postgres/pgvector as a container or snapshot-restored instance; a post-deploy step re-runs filing ingestion (FR-13).
 - DEP-7: `RemovalPolicy.DESTROY` on log groups and all ephemeral resources. Until `nightly-destroy.yml` exists, `scripts/aws-teardown.sh` is run at the end of every working session (ADR 0005).
 - DEP-8: Workflows:
 
 | Workflow | Trigger | Action |
 |---|---|---|
 | `ci.yml` | push / PR | Build, unit tests, eval suite |
-| `deploy.yml` | manual (`workflow_dispatch`) | Build images → push to ECR → `cdk deploy` ephemeral stack → re-hydrate data |
+| `deploy.yml` | manual (`workflow_dispatch`) | Build images → push to ECR → `cdk deploy` ephemeral stack → re-run filing ingestion |
 | `destroy.yml` | manual | `cdk destroy` ephemeral stack |
 | `nightly-destroy.yml` | schedule (e.g., 02:00 PT) | Safety-net destroy if the stack exists |
 
 ```mermaid
 flowchart LR
     GH[GitHub Actions] -- OIDC --> IAM[IAM deploy role]
-    IAM --> P[Persistent stack<br/>ECR, SSM, S3]
-    IAM --> E[Ephemeral stack<br/>VPC, ALB, ECS Fargate Spot,<br/>Postgres, Redis, Bifrost]
+    IAM --> P[Persistent stack<br/>ECR, SSM]
+    IAM --> E[Ephemeral stack<br/>VPC, ALB, ECS Fargate Spot,<br/>Postgres, Bifrost]
     E -. "cdk destroy<br/>(manual + nightly)" .-> X((Torn down))
 ```
 
@@ -452,7 +447,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 |---|---|---|---|
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
 | **1** | Own MCP servers | `market-data-mcp` (Finnhub), `filings-mcp` (EDGAR), `macro-mcp` (FRED); Streamable HTTP; agent uses MCP client | Agent answers using MCP tools only; upstream keys only in MCP servers; rate limiting and upstream caching work |
-| **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; export to S3; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
+| **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
 | **3b–3d** | Add agents | News & sentiment → Portfolio risk → Critic | Each addition has eval cases; Critic catches seeded wrong numbers |
@@ -460,28 +455,14 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
 | **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; every action ends with a recorded status |
-| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | WireMock resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
+| **8** | Resilience + async | Per-step retry, circuit breaker, fallback model; morning brief with M2M token and Batch API | JUnit resilience tests pass (incl. tool-executed-once); brief generated on schedule and resumable |
 | **9** | Production | Full OpenTelemetry tracing; evals in CI; complete CDK stacks (extends the Iteration 2b stack with Bifrost and persistent resources); GitHub Actions deploy/destroy/nightly destroy; Fargate Spot | One-click deploy and destroy; traces visible in AWS run; CI blocks failing evals; budget alert configured |
 | **10** *(optional)* | LangGraph4j comparison | Re-implement the paper-trade approval flow with a checkpointed LangGraph4j graph | README compares LangChain4j agentic vs LangGraph4j for durable pause/resume |
-| **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share with interviewers |
+| **Final** | Showcase | README with architecture diagrams, design decisions, trade-offs, cost numbers; demo video; Medium article | Repo ready to share |
 
 **Milestone:** after Iteration 3 the project already answers "Have you built an AI agent?"; Iterations 4–9 make the answer strong.
 
-## 15. Interview Coverage Map
-
-| Interview question | Where the project demonstrates it |
-|---|---|
-| How do you deploy an agent to production? | Iterations 5, 8, 9 — guardrails, evals in CI, observability, CDK + GitHub Actions |
-| How do you scale an agentic application? | Stateless app + virtual threads, Redis/Postgres state, rate limits and budgets, async brief, Bifrost |
-| What are MCP gateways? | Iteration 6 — Bifrost with per-agent virtual keys; AgentCore mapping in README |
-| How do you authorize users / where does OAuth go? | Iteration 5 — WorkOS AuthKit, resource servers, audience validation, ownership checks, M2M |
-| How do you reduce token usage? | Iteration 4 — semantic cache, classifier routing, Haiku default, prompt caching, trimmed tool outputs, <100K prompts, Batch API, Code Mode |
-| Have you built an AI agent? | The whole project: six agents, MCP servers, RAG, HITL |
-| Build an agent that retries LLM calls on 5xx | Iteration 8 — per-step retry, circuit breaker, fallback, WireMock tests |
-| Workflow vs agent? | Section 6.2 — components that are deliberately not agents |
-| Spring AI vs LangChain? | LangChain4j agentic used; optional LangGraph4j comparison (Iteration 10) |
-
-## 16. Risks, Open Questions and Decisions to Verify
+## 15. Risks, Open Questions and Decisions to Verify
 
 | # | Item | Action |
 |---|---|---|
@@ -497,10 +478,8 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-10 | Semantic cache false hits returning wrong-ticker answers | Ticker and freshness filters; high threshold; feedback metric |
 | Q-1 | Java 21 vs 25? | Decide in Iteration 0 |
 | Q-2 | CDK in Java or TypeScript? | Java preferred for consistency |
-| Q-3 | Redis vs pgvector for the semantic cache? | Start with pgvector (one less dependency); revisit if latency matters |
-| Q-4 | Grafana (local) vs Datadog (free trial) for dashboards? | Decide in Iteration 4 |
 
-## 17. Glossary
+## 16. Glossary
 
 | Term | Meaning |
 |---|---|

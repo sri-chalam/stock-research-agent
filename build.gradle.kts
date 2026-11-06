@@ -27,10 +27,6 @@ dependencies {
     implementation(libs.bundles.langchain4j)
 
     testImplementation(libs.spring.boot.starter.test)
-    testImplementation(platform(libs.testcontainers.bom))
-    testImplementation(libs.testcontainers.junit)
-    testImplementation(libs.testcontainers.postgresql)
-    testImplementation(libs.wiremock)
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
 }
 

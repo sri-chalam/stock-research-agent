@@ -4,8 +4,6 @@ spotless = "8.10.4"
 langchain4j = "1.23.0"
 # langchain4j-agentic and langchain4j-mcp are beta and not managed by the BOM: pin exact versions.
 langchain4j-beta = "1.23.0-beta33"
-testcontainers = "1.21.3"
-wiremock = "3.13.1"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
@@ -19,10 +17,6 @@ langchain4j-anthropic = { module = "dev.langchain4j:langchain4j-anthropic" }
 langchain4j-agentic = { module = "dev.langchain4j:langchain4j-agentic", version.ref = "langchain4j-beta" }
 langchain4j-mcp = { module = "dev.langchain4j:langchain4j-mcp", version.ref = "langchain4j-beta" }
 
-testcontainers-bom = { module = "org.testcontainers:testcontainers-bom", version.ref = "testcontainers" }
-testcontainers-junit = { module = "org.testcontainers:junit-jupiter" }
-testcontainers-postgresql = { module = "org.testcontainers:postgresql" }
-wiremock = { module = "org.wiremock:wiremock-standalone", version.ref = "wiremock" }
 
 [bundles]
 langchain4j = ["langchain4j", "langchain4j-anthropic", "langchain4j-agentic", "langchain4j-mcp"]
