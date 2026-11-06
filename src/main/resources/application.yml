@@ -12,6 +12,5 @@ stock-agent:
     quote:
       model: claude-haiku-5-5
       max-tokens: 1024
-      temperature: 0.0
       timeout: 30s
       max-steps: 4

@@ -30,7 +30,6 @@ public class LangChain4jConfig {
         .apiKey(anthropicApiKey)
         .modelName(quoteSettings.model())
         .maxTokens(quoteSettings.maxTokens())
-        .temperature(quoteSettings.temperature())
         .timeout(quoteSettings.timeout())
         .build();
   }

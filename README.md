@@ -38,7 +38,7 @@ curl -X POST localhost:8080/api/chat -H 'Content-Type: application/json' -d '{"m
 # {"answer":"...189.42...","toolsCalled":[{"name":"getQuote","arguments":{"symbol":"AAPL"}}]}
 ```
 
-- Model, max tokens, temperature, timeout and max steps are per agent in `application.yml` (`stock-agent.agents.quote`).
+- Model, max tokens, timeout and max steps are per agent in `application.yml` (`stock-agent.agents.quote`).
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
 - Tests use a scripted fake `ChatModel`; no live model call.
 - Deviation from spec §14: Docker Compose is deferred to Iteration 1.

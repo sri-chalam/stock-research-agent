@@ -14,11 +14,9 @@ public record AgentProperties(Map<String, AgentSettings> agents) {
   ///
   /// @param model model ID, e.g. `claude-haiku-5-5`
   /// @param maxTokens maximum output tokens per LLM call
-  /// @param temperature sampling temperature
   /// @param timeout per-call timeout
   /// @param maxSteps maximum sequential tool invocations per run
-  public record AgentSettings(
-      String model, int maxTokens, double temperature, Duration timeout, int maxSteps) {}
+  public record AgentSettings(String model, int maxTokens, Duration timeout, int maxSteps) {}
 
   /// Returns the settings for an agent.
   ///
