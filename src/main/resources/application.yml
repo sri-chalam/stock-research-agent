@@ -14,3 +14,21 @@ stock-agent:
       max-tokens: 1024
       timeout: 30s
       max-steps: 4
+
+# JSON console logs (docs/logging/). "logstash" is the name of one of Spring Boot's built-in JSON
+# layouts (alongside ecs and gelf); it needs no Logstash server or extra dependency. Its flat shape
+# is closest to our schema. Interim until StockAgentLogFormatter replaces it. The timestamp is
+# injected downstream, so it is excluded here.
+logging:
+  structured:
+    format:
+      console: logstash
+    json:
+      exclude: "@timestamp,@version,level_value"
+      rename:
+        logger_name: className
+      add:
+        service: ${spring.application.name}
+  level:
+    # ResponseEntityExceptionHandler warns here for some 4xx; GlobalExceptionHandler already logs them.
+    org.springframework.web.servlet.PageNotFound: off

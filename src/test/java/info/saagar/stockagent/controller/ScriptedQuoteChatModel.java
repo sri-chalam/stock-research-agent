@@ -7,10 +7,15 @@ import dev.langchain4j.data.message.ToolExecutionResultMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.output.TokenUsage;
 import java.util.List;
 
 /// Fake model: first asks for `getQuote(symbol)`, then answers with the tool result text.
+///
+/// Each response reports 10 input and 5 output tokens.
 class ScriptedQuoteChatModel implements ChatModel {
+
+  private static final TokenUsage TOKENS_PER_CALL = new TokenUsage(10, 5);
 
   private final String symbolToRequest;
 
@@ -25,6 +30,7 @@ class ScriptedQuoteChatModel implements ChatModel {
     if (lastMessage instanceof ToolExecutionResultMessage toolResult) {
       return ChatResponse.builder()
           .aiMessage(AiMessage.from("Result: " + toolResult.text()))
+          .tokenUsage(TOKENS_PER_CALL)
           .build();
     }
     ToolExecutionRequest getQuoteRequest =
@@ -33,6 +39,9 @@ class ScriptedQuoteChatModel implements ChatModel {
             .name("getQuote")
             .arguments("{\"symbol\":\"" + symbolToRequest + "\"}")
             .build();
-    return ChatResponse.builder().aiMessage(AiMessage.from(getQuoteRequest)).build();
+    return ChatResponse.builder()
+        .aiMessage(AiMessage.from(getQuoteRequest))
+        .tokenUsage(TOKENS_PER_CALL)
+        .build();
   }
 }

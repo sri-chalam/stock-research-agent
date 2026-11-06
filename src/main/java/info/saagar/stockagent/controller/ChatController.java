@@ -1,10 +1,14 @@
 package info.saagar.stockagent.controller;
 
+import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolExecution;
 import info.saagar.stockagent.agent.QuoteAgent;
+import info.saagar.stockagent.config.LangChain4jConfig;
+import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -13,7 +17,6 @@ import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
-import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
 /// Synchronous chat endpoint backed by the Quote agent.
@@ -22,7 +25,6 @@ import tools.jackson.databind.json.JsonMapper;
 public class ChatController {
 
   private static final Logger log = LoggerFactory.getLogger(ChatController.class);
-  private static final TypeReference<Map<String, Object>> ARGUMENTS_TYPE = new TypeReference<>() {};
 
   private final QuoteAgent quoteAgent;
   private final JsonMapper jsonMapper;
@@ -63,25 +65,32 @@ public class ChatController {
     Result<String> agentResult = quoteAgent.answer(chatRequest.message());
     List<ToolCall> toolsCalled =
         agentResult.toolExecutions().stream().map(this::toToolCall).toList();
-    log.atInfo()
-        .addKeyValue("eventName", "chatCompleted")
-        .addKeyValue(
-            "eventData",
-            Map.of(
-                "toolCallCount",
-                toolsCalled.size(),
-                "completeExecDurationTimeMs",
-                (System.nanoTime() - startNanos) / 1_000_000))
-        .log("Chat request completed");
+    logAnswerProvenance(agentResult, toolsCalled, startNanos);
     return new ChatResponse(agentResult.content(), toolsCalled);
   }
 
   private ToolCall toToolCall(ToolExecution toolExecution) {
-    String rawArguments = toolExecution.request().arguments();
-    Map<String, Object> toolArguments =
-        rawArguments == null || rawArguments.isBlank()
-            ? Map.of()
-            : jsonMapper.readValue(rawArguments, ARGUMENTS_TYPE);
-    return new ToolCall(toolExecution.request().name(), toolArguments);
+    return new ToolCall(
+        toolExecution.request().name(),
+        ToolArguments.parse(jsonMapper, toolExecution.request().arguments()));
+  }
+
+  /// Logs the one `answerProvenance` line that says which agent, prompt and tools made the answer.
+  private static void logAnswerProvenance(
+      Result<String> agentResult, List<ToolCall> toolsCalled, long startNanos) {
+    TokenUsage tokenUsage = agentResult.tokenUsage();
+    Map<String, Object> provenanceData = new LinkedHashMap<>();
+    provenanceData.put("agentName", LangChain4jConfig.QUOTE_AGENT_NAME);
+    provenanceData.put("promptId", QuoteAgent.PROMPT_ID);
+    provenanceData.put("toolsUsed", toolsCalled.stream().map(ToolCall::name).toList());
+    provenanceData.put("inputTokenCount", tokenUsage == null ? null : tokenUsage.inputTokenCount());
+    provenanceData.put(
+        "outputTokenCount", tokenUsage == null ? null : tokenUsage.outputTokenCount());
+    provenanceData.put("totalTokenCount", tokenUsage == null ? null : tokenUsage.totalTokenCount());
+    provenanceData.put("completeExecDurationTimeMs", (System.nanoTime() - startNanos) / 1_000_000);
+    log.atInfo()
+        .addKeyValue("eventName", "answerProvenance")
+        .addKeyValue("eventData", provenanceData)
+        .log("Answer provenance");
   }
 }

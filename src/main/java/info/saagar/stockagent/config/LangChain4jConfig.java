@@ -4,6 +4,7 @@ import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.AiServices;
 import info.saagar.stockagent.agent.QuoteAgent;
+import info.saagar.stockagent.logging.ToolExecutionLogger;
 import info.saagar.stockagent.tool.QuoteTools;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -15,7 +16,8 @@ import org.springframework.context.annotation.Configuration;
 @EnableConfigurationProperties(AgentProperties.class)
 public class LangChain4jConfig {
 
-  static final String QUOTE_AGENT_NAME = "quote";
+  /// Key of the Quote agent's settings in `application.yml`; also logged as its agent name.
+  public static final String QUOTE_AGENT_NAME = "quote";
 
   /// Builds the Claude chat model for the Quote agent from its `application.yml` settings.
   ///
@@ -39,13 +41,18 @@ public class LangChain4jConfig {
   /// @param quoteChatModel chat model used by the agent
   /// @param quoteTools tools the agent may call
   /// @param agentProperties per-agent settings
+  /// @param toolExecutionLogger logs each tool call the agent makes
   /// @return the Quote agent
   @Bean
   public QuoteAgent quoteAgent(
-      ChatModel quoteChatModel, QuoteTools quoteTools, AgentProperties agentProperties) {
+      ChatModel quoteChatModel,
+      QuoteTools quoteTools,
+      AgentProperties agentProperties,
+      ToolExecutionLogger toolExecutionLogger) {
     return AiServices.builder(QuoteAgent.class)
         .chatModel(quoteChatModel)
         .tools(quoteTools)
+        .afterToolExecution(toolExecutionLogger)
         .maxSequentialToolsInvocations(agentProperties.forAgent(QUOTE_AGENT_NAME).maxSteps())
         .build();
   }
