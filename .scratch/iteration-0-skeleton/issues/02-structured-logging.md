@@ -9,7 +9,7 @@
 ## Decisions (from the Iteration 0 grilling)
 
 - Use Spring Boot's built-in structured logging (JSON console output) with the SLF4J 2 fluent API and `eventName` / `eventData` key-values.
-- Build `CorrelationContextFilter` (reads `X-Correlation-Id` and `X-Trace-Id`, validates against `^[A-Za-z0-9-]{1,64}$`, generates a UUID otherwise, clears the MDC in `finally`) and `GlobalExceptionHandler` (logs each handled exception once at `error` with `errorCode`, `httpStatus` and `exceptionType`; attaches the throwable only for 5xx). Both live in the `logging` package (table already in AGENTS.md).
+- Build `LoggingContextFilter` (reads `X-Correlation-Id` and `X-Trace-Id`, validates against `^[A-Za-z0-9-]{1,64}$`, generates a UUID otherwise, clears the MDC in `finally`) and `GlobalExceptionHandler` (logs each handled exception once at `error` with `errorCode`, `httpStatus` and `exceptionType`; attaches the throwable only for 5xx). Both live in the `logging` package (table already in AGENTS.md).
 - Log events: `toolExecuted` (tool name, arguments, duration in `DurationTimeMs`) and `answerProvenance` (prompt ID from the prompt filename, tools used, token counts).
 - Deferred to a later iteration: `RequestLoggingInterceptor` and the custom `StockAgentLogFormatter`.
 - No `methodName`, no `timestamp`, no values inside message strings.

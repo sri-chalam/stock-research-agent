@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Tools are exposed to agents only through MCP servers (spec section 7.1). The tools fall into four groups with different upstream sources, API keys, rate limits, cache TTLs and access rules. The project is implemented in Java, and every server must validate OAuth tokens and expose health and metrics.
+Tools are exposed to agents only through MCP servers (spec section 7.1). The tools fall into four groups with different upstream sources, API keys and access rules. The project is implemented in Java, and every server must validate OAuth tokens and expose health and metrics.
 
 ## Decision
 
@@ -21,7 +21,7 @@ Servers are not split further (for example, one per tool).
 
 ## Consequences
 
-- Upstream API keys are isolated per server (MCP-1), and rate limits and cache TTLs are set per upstream.
+- Upstream API keys are isolated per server (MCP-1).
 - OAuth scopes and Bifrost tool allowlists map directly to servers (`marketdata.read`, `filings.read`, `macro.read`, `portfolio.read`, `portfolio.write`).
 - `portfolio-mcp` alone carries the user-scoped ownership checks (SEC-6).
 - Spring Security, Actuator and Micrometer give identical token validation, health and metrics in every server. A shared module for configuration, security and logging is recommended to avoid duplication.
@@ -30,6 +30,6 @@ Servers are not split further (for example, one per tool).
 
 ## Alternatives considered
 
-- **One combined MCP server:** fewer processes, but upstream keys, rate limits and access rules would be mixed in one service, and per-domain allowlists would be harder to express.
+- **One combined MCP server:** fewer processes, but upstream keys and access rules would be mixed in one service, and per-domain allowlists would be harder to express.
 - **One server per tool:** maximum isolation, but operational cost grows with no matching benefit.
 - **Plain MCP Java SDK without Spring Boot:** lighter, but token validation, health and metrics would have to be rebuilt by hand.

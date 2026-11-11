@@ -24,5 +24,5 @@ Secrets Manager is not used (DEP-5).
 - One code path for reading keys, whether local or in AWS.
 - No cost for key storage. Secrets Manager would charge about $0.40 per secret per month.
 - No automatic key rotation. Rotating a key means updating the parameter and restarting the task.
-- All users share each provider's rate limit, for example Finnhub's ~60 requests/min. Upstream caching in the MCP servers (MCP-3) reduces the load.
+- All users share each provider's rate limit, for example Finnhub's ~60 requests/min. The MCP servers do not rate-limit or cache (MCP-3); exceeding the limit returns a tool error.
 - Finnhub's free tier is for personal use, so the app must not be opened to the public.

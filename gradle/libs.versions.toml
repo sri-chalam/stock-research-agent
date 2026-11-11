@@ -17,10 +17,10 @@ langchain4j-anthropic = { module = "dev.langchain4j:langchain4j-anthropic" }
 langchain4j-agentic = { module = "dev.langchain4j:langchain4j-agentic", version.ref = "langchain4j-beta" }
 langchain4j-mcp = { module = "dev.langchain4j:langchain4j-mcp", version.ref = "langchain4j-beta" }
 
+# Gradle plugins used by the buildSrc convention plugins.
+spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "spring-boot" }
+spotless-gradle-plugin = { module = "com.diffplug.spotless:spotless-plugin-gradle", version.ref = "spotless" }
 
 [bundles]
 langchain4j = ["langchain4j", "langchain4j-anthropic", "langchain4j-agentic", "langchain4j-mcp"]
 
-[plugins]
-spring-boot = { id = "org.springframework.boot", version.ref = "spring-boot" }
-spotless = { id = "com.diffplug.spotless", version.ref = "spotless" }

@@ -14,16 +14,18 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 ## Build and run
 
 ```bash
-./gradlew build      # compile and test
-./gradlew bootRun    # start the app
+./gradlew build                     # compile and test all modules
+./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
+./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
 ```
 
 ## Project layout
 
 ```
-src/main/java        application code (info.saagar.stockagent)
-src/main/resources   configuration, static GUI
-src/test/java        tests
+agent-app/         agent app (info.saagar.stockagent)
+market-data-mcp/   market-data MCP server (info.saagar.stockagent.marketdata)
+common/            code and config (common.yml) shared by the apps (info.saagar.stockagent.common)
+buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
 ```
 
@@ -33,8 +35,8 @@ gradle/libs.versions.toml   dependency version catalog
 
 ```bash
 export ANTHROPIC_API_KEY=...
-./gradlew bootRun
-curl -X POST localhost:8080/api/chat -H 'Content-Type: application/json' -d '{"message":"price of Apple"}'
+./gradlew :agent-app:bootRun
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -d '{"message":"price of Apple"}'
 # {"answer":"...189.42...","toolsCalled":[{"name":"getQuote","arguments":{"symbol":"AAPL"}}]}
 ```
 
