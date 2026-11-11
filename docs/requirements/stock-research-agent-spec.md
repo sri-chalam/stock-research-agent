@@ -90,7 +90,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 | MCP / LLM gateway | **Bifrost** (open source, Apache 2.0), Docker | Iteration 6 |
 | Identity | **WorkOS AuthKit** (OAuth 2.1 + PKCE, M2M client credentials) | Free up to 1M MAU; Keycloak as alternative for token exchange |
 | Vector store | PostgreSQL + **pgvector** | Filings RAG and semantic cache |
-| Relational DB | PostgreSQL | Users' portfolios, watchlists, pending actions, memory, session state, rate-limit counters |
+| Relational DB | PostgreSQL | Users' portfolios, watchlists, pending actions, memory, session state |
 | GUI | Single `index.html` + plain JavaScript + classless CSS (Pico.css) | Served by the agent app; SSE streaming |
 | Observability | Micrometer + OpenTelemetry → Grafana | Traces per agent step |
 | Testing | JUnit 5 | Plus eval suite |
@@ -201,15 +201,15 @@ flowchart TD
 
 | MCP server | Tools (initial) | Upstream source | Auth to upstream |
 |---|---|---|---|
-| **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
+| **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to, symbol?)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
 | **filings-mcp** | `listFilings(ticker, formType)`, `getFilingSection(ticker, accession, section)`, `getCompanyFacts(ticker, concept)` (XBRL), `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
 | **macro-mcp** | `getSeries(seriesId, range)` (e.g., CPI, fed funds, 10Y yield), `searchSeries(query)` | FRED | Free API key |
 | **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
 
 Requirements:
 - MCP-1: Upstream API keys never leave the MCP server; they are never passed to the agent or the LLM.
-- MCP-2: Tool results are trimmed to the fields the model needs (no raw JSON/HTML dumps).
-- MCP-3: Each server enforces upstream rate limits (token bucket) and caches upstream responses with TTLs suited to the data (quotes seconds; profiles days; filings indefinitely).
+- MCP-2: Tool results are trimmed to the fields the model needs (no raw JSON/HTML dumps). For `market-data-mcp`: news returns the 10 most recent articles (summary ≤ ~300 chars, range ≤ 30 days, default 7); market news accepts only `general` and `merger`; the earnings calendar without a symbol is capped at 7 days and 25 rows; basic financials return a fixed set of ~12 metrics with no time series.
+- MCP-3: MCP servers do not rate-limit or cache upstream calls. The project's goal is learning MCP, gateways and RAG, not upstream traffic management. When an upstream rejects a call (e.g., Finnhub HTTP 429), the tool returns a model-readable error (MCP-5).
 - MCP-4: No provider fallback; Finnhub is the only market-data source (ADR 0007).
 - MCP-5: Tool errors return clear, model-readable messages (e.g., "International symbols are not supported on the free tier").
 - MCP-6: Servers are OAuth 2.1 resource servers (from Iteration 5): validate JWT signature, issuer, expiry, **audience = this server's URL**, and scopes.
@@ -229,7 +229,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 
 ### 8.1 Tool calling via MCP
 - FR-1: Agents call tools exclusively through MCP clients (LangChain4j MCP module); no direct HTTP calls from agents to data providers.
-- FR-2: Tool definitions are discovered from MCP servers at startup and refreshed on change.
+- FR-2: Tool definitions are discovered from MCP servers on first use and cached; a restart of the agent app picks up tool changes (stateless servers cannot push change notifications).
 - FR-3: Each agent only receives the tools on its allowlist (in code before Iteration 6; via Bifrost virtual keys after).
 
 ### 8.2 Intent and freshness classification
@@ -281,7 +281,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-32: Input guardrails: prompt-injection detection, length limits, off-topic and advice-request detection.
 - FR-33: News articles and filing text are treated as **untrusted data**; they can never change tool permissions or trigger trades.
 - FR-34: Output guardrails: no personalized buy/sell recommendations; disclaimer on research outputs ("Not investment advice"); schema validation; no external URLs except known source links (SEC, Finnhub news URLs).
-- FR-35: Tool-call guardrails: argument validation (ticker format, date ranges), allowlists, rate limits.
+- FR-35: Tool-call guardrails: argument validation (ticker format, date ranges), allowlists.
 
 ### 8.10 Resilience
 - FR-36: LLM calls: retry on 408, 429, 500, 502, 503, 504, 529 and timeouts; no retry on 400, 401, 403, 404; exponential backoff with jitter; honor `Retry-After`; max 4 attempts.
@@ -446,7 +446,9 @@ Each iteration ends with working, tested, committed code and a short README upda
 | # | Iteration | Scope | Acceptance criteria |
 |---|---|---|---|
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
-| **1** | Own MCP servers | `market-data-mcp` (Finnhub), `filings-mcp` (EDGAR), `macro-mcp` (FRED); Streamable HTTP; agent uses MCP client | Agent answers using MCP tools only; upstream keys only in MCP servers; rate limiting and upstream caching work |
+| **1a** | `market-data-mcp` | Multi-module Gradle build (`agent-app`, `market-data-mcp`, `logging-common`); Streamable HTTP over `langchain4j-community-mcp-server`; six Finnhub tools; agent uses MCP client with a per-agent tool allowlist; correlation headers sent on MCP calls | `POST /api/chat` "price of Apple" returns a live Finnhub price through `market-data-mcp` `getQuote`; `agent-app` has no local tools and no Finnhub key reference; the other five tools answer `tools/call` with trimmed output; one request's logs share a `correlationId` across both apps |
+| **1b** | `filings-mcp` | SEC EDGAR server; shared `mcp-common` module extracted from the two servers | Agent answers filings questions through `filings-mcp` tools only |
+| **1c** | `macro-mcp` | FRED server | Agent answers macro questions through `macro-mcp` tools only; upstream keys only in MCP servers |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
@@ -469,7 +471,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-1 | LangChain4j Spring Boot starters' compatibility with Spring Boot 4.1.1 | Verify in Iteration 0; fall back to manual bean configuration if starters lag |
 | R-2 | `langchain4j-agentic` and `langchain4j-mcp` are beta; APIs change between releases | Pin exact versions; wrap in thin adapters |
 | R-3 | WorkOS support for RFC 8693 token exchange | Verify; choose Option A or B (Section 9.3) |
-| R-4 | Free-tier data limits (Finnhub has no candles, so no price history) | Aggressive caching; add a single history provider later if needed |
+| R-4 | Free-tier data limits (Finnhub has no candles, so no price history) | Accept the limits; add a single history provider later if needed |
 | R-5 | Data licensing (Finnhub personal use only) | Keep repo free of recorded licensed data; no public hosted demo; share via video |
 | R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security. OSS Bifrost cannot validate WorkOS JWTs (Enterprise only), so MCP servers validate the user token (ADR 0001) |
 | R-7 | Haiku 5.5 sufficiency for Supervisor/Filings/Risk | Decide per agent using evals |
