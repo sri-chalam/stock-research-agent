@@ -41,16 +41,43 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 
 ## 3. Project Structure
 
+Multi-module Gradle build. Shared build logic lives in `buildSrc` convention plugins (`stockagent.java-conventions`, `stockagent.spring-app`), which read `gradle/libs.versions.toml`.
+
+| Module | Role |
+|---|---|
+| `agent-app` | The agent app (REST API, agents, MCP clients). Port 8080 |
+| `market-data-mcp` | Market-data MCP server (Finnhub). Port 8081 |
+| `common` | Code shared by more than one module. A plain library, not an app |
+
+Each app's `application.yml` holds only its own settings and imports `classpath:common.yml` (from `common`) for shared settings: structured logging and virtual threads. Do not put one app's settings in another app's file or in `common.yml`.
+
+### `agent-app`
+
 Package by layer under `info.saagar.stockagent`:
 
 | Package | Contents |
 |---|---|
 | `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `QuoteAgent`) |
-| `tool` | LangChain4j `@Tool` classes (e.g. `QuoteTools`) |
+| `tool` | LangChain4j `@Tool` classes and their helpers (e.g. `QuoteTools`, `ToolArguments`) |
 | `provider` | Interfaces over external data sources, their implementations and result records (e.g. `QuoteProvider`, `FakeQuoteProvider`, `Quote`) |
 | `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `LangChain4jConfig`) |
-| `logging` | Request-context and structured-logging support (`CorrelationContextFilter`, `GlobalExceptionHandler`, `StockAgentLogFormatter`) |
+| `logging` | Agent-app-only logging support (`ToolExecutionLogger`) |
+
+### `market-data-mcp`
+
+Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpApplication`, which also scans `info.saagar.stockagent.common`).
+
+### `common`
+
+Under `info.saagar.stockagent.common`, organised by package:
+
+| Package | Contents |
+|---|---|
+| `common.logging` | Request-context and structured-logging support (`LoggingContextFilter`; `StockAgentLogFormatter` when written) |
+| `common.web` | Web-layer support shared by the apps (`GlobalExceptionHandler`) |
+
+`LogEventNamesTest` runs in each app and scans that app's `src/main/java` plus `common/src/main/java`, so `eventName` values are unique per app.
 
 
 ## 4. Development / Build Commands
@@ -58,6 +85,8 @@ Package by layer under `info.saagar.stockagent`:
 ./gradlew build        # preferred over `./gradlew test` alone - runs Spotless formatting + tests + jar
 ./gradlew test         # run tests only
 ./gradlew clean build  # full clean build
+./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
+./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
 ```
 
 ## 5. Code Style

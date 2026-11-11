@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: market-data-mcp
+  config:
+    import: classpath:common.yml
+
+server:
+  port: 8081
+  address: 127.0.0.1
