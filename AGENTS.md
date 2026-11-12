@@ -58,9 +58,9 @@ Package by layer under `info.saagar.stockagent`:
 | Package | Contents |
 |---|---|
 | `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
-| `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `QuoteAgent`) |
+| `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`) |
 | `tool` | Tool-call helpers (`ToolArguments`). agent-app has no `@Tool` classes: tools come from MCP servers |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `QuoteAgentConfig`, `McpClientConfig`) |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`) |
 | `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`

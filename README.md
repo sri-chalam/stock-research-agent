@@ -6,6 +6,42 @@ Multi-agent stock research and portfolio assistant in Java, built with Spring Bo
 
 Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements/stock-research-agent-spec.md)
 
+## Purpose
+
+This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
+
+> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 1a. Some goals may change or be dropped.
+
+Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
+
+| # | Area | What to explore | Status |
+|---|---|---|---|
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent only |
+| 2 | Tool calling | The model picks tools and their arguments | ✅ |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp` only |
+| 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
+| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
+| 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
+| 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
+| 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
+| 9 | Guardrails | Prompt-injection checks, news and filing text treated as untrusted input, refusal of buy/sell advice | ⏳ |
+| 10 | Human-in-the-loop | Paper trades run only after the user approves them | ⏳ |
+| 11 | Structured output | Reports and briefs returned as typed Java records | ⏳ |
+| 12 | Resilience | Retry per LLM step, circuit breaker and fallback model | ⏳ |
+| 13 | Scheduled jobs | Morning brief run by a scheduled job with a machine-to-machine token and the Anthropic Batch API | ⏳ |
+| 14 | Cost control | Prompt caching, token and cost per agent, Haiku vs Sonnet chosen per agent | ⏳ |
+| 15 | Chat GUI | One `index.html` with streamed answers (SSE) and an agent/tool trace panel | ⏳ |
+| 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
+| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs only |
+| 18 | Intent and freshness classifier | Route each question to a direct quote lookup, the cache or the multi-agent flow | ❓ |
+| 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
+
+Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own.
+
+### How this was built
+
+Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the author's own skills.
+
 ## Prerequisites
 
 - Java 25
@@ -31,10 +67,10 @@ gradle/libs.versions.toml   dependency version catalog
 
 ## Run locally
 
-Two apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Quote agent (Claude Haiku 5.5). To get a price, the agent calls the `getQuote` tool on `market-data-mcp` over MCP. `market-data-mcp` fetches the quote from Finnhub and returns it to the agent:
+Two apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Market data agent (Claude Haiku 5.5). The agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
 
 ```
-curl → agent-app :8080 (/api/chat, Quote agent) → MCP client → market-data-mcp :8081 (/mcp, getQuote) → Finnhub API
+curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
 ### 1. Set environment variables
@@ -63,6 +99,10 @@ export ANTHROPIC_API_KEY=...
 
 ### 3. Sample prompts
 
+Each prompt is grouped under the tool the agent is expected to call. The model picks the tool and its arguments, so `toolsCalled` in the response shows what it actually did.
+
+**`getQuote`**: latest price, change, day range, open and previous close.
+
 ```bash
 # Company name resolved to a ticker
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
@@ -72,17 +112,95 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 # Price move for the day
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"How is NVDA trading today? Include the percent change and day range."}'
-
-# Unsupported symbol: the tool returns a model-readable error that the agent explains
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
-  -d '{"message":"Price of 7203.T on the Tokyo exchange?"}'
 ```
 
-Prices are live Finnhub quotes, so answers vary. Only US-listed equities are supported.
+**`getCompanyProfile`**: name, exchange, industry, country, market cap, shares outstanding, IPO date and website.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Get Atlassian Company profile info. Stock symbol TEAM"}'
+# {"answer":"...","toolsCalled":[{"name":"getCompanyProfile","arguments":{"symbol":"TEAM"}}]}
+```
+
+**`getCompanyNews`**: the 10 most recent articles about one company. The range is at most 30 days; with no dates it is the last 7 days.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Summarize the last week of news about MSFT."}'
+# {"answer":"...","toolsCalled":[{"name":"getCompanyNews","arguments":{"symbol":"MSFT"}}]}
+```
+
+**`getMarketNews`**: the 10 most recent market-wide articles. Category is `general` or `merger`.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are the latest merger and acquisition headlines?"}'
+# {"answer":"...","toolsCalled":[{"name":"getMarketNews","arguments":{"category":"merger"}}]}
+```
+
+**`getEarningsCalendar`**: earnings dates with EPS and revenue estimates and actuals. Without a symbol, the range is at most 7 days and at most 25 rows are returned.
+
+```bash
+# One company
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"When does NVDA report earnings in the next 3 months, and what EPS is expected?"}'
+
+# All companies, one week
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Which companies report earnings in the next 5 days?"}'
+```
+
+**`getBasicFinancials`**: 52-week high and low, P/E, price/book, EPS, dividend yield, beta, margins, ROE and debt/equity.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are the P/E ratio, net margin and dividend yield for Coca-Cola?"}'
+# {"answer":"...","toolsCalled":[{"name":"getBasicFinancials","arguments":{"symbol":"KO"}}]}
+```
+
+**Several tools in one question**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Give me an overview of Atlassian (TEAM): what the company is, its current price and its P/E."}'
+# toolsCalled includes getCompanyProfile, getQuote and getBasicFinancials
+```
+
+**Errors**: the tool returns a model-readable error that the agent explains.
+
+```bash
+# Unsupported (non-US) symbol
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Price of 7203.T on the Tokyo exchange?"}'
+
+# Date range over the 7-day limit for all-company earnings
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"List every company reporting earnings in the next 30 days."}'
+```
+
+Data is live from Finnhub, so answers vary. Only US-listed equities are supported.
+
+### 4. Call the MCP tools directly (optional)
+
+To check a tool's output without the agent or the model, send JSON-RPC to `market-data-mcp`. The server is stateless, so no `initialize` call is needed. JSON-RPC ids must be numbers.
+
+```bash
+# List the six tools and their parameter schemas
+curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/list"}'
+
+# Call one tool
+curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"getCompanyProfile","arguments":{"symbol":"TEAM"}}}'
+
+# A validation error comes back as a result with "isError": true
+curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"getMarketNews","arguments":{"category":"crypto"}}}'
+```
 
 ### Notes
 
-- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.quote`).
+- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`).
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
 - Tests use a scripted fake `ChatModel` and a fake Finnhub client; no live model or Finnhub call.
 - Deviation from spec §14: Docker Compose is not set up yet.

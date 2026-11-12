@@ -6,6 +6,7 @@ import info.saagar.stockagent.marketdata.provider.FinnhubClient;
 import info.saagar.stockagent.marketdata.provider.RestClientFinnhubClient;
 import info.saagar.stockagent.marketdata.tool.MarketDataTools;
 import java.net.http.HttpClient;
+import java.time.Clock;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
@@ -41,6 +42,14 @@ public class MarketDataConfig {
             .requestFactory(requestFactory)
             .build();
     return new RestClientFinnhubClient(finnhubRestClient, finnhubApiKey);
+  }
+
+  /// Clock for date defaults in the tools; dates are taken in UTC.
+  ///
+  /// @return the system UTC clock
+  @Bean
+  public Clock clock() {
+    return Clock.systemUTC();
   }
 
   /// Builds the transport-agnostic MCP server over the market data tools.

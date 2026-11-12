@@ -3,8 +3,8 @@ package info.saagar.stockagent.controller;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolExecution;
-import info.saagar.stockagent.agent.QuoteAgent;
-import info.saagar.stockagent.config.QuoteAgentConfig;
+import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -19,22 +19,22 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Synchronous chat endpoint backed by the Quote agent.
+/// Synchronous chat endpoint backed by the Market data agent.
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
 
   private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
-  private final QuoteAgent quoteAgent;
+  private final MarketDataAgent marketDataAgent;
   private final JsonMapper jsonMapper;
 
   /// Creates the controller.
   ///
-  /// @param quoteAgent agent that answers prompts
+  /// @param marketDataAgent agent that answers prompts
   /// @param jsonMapper mapper used to parse tool-call arguments
-  public ChatController(QuoteAgent quoteAgent, JsonMapper jsonMapper) {
-    this.quoteAgent = quoteAgent;
+  public ChatController(MarketDataAgent marketDataAgent, JsonMapper jsonMapper) {
+    this.marketDataAgent = marketDataAgent;
     this.jsonMapper = jsonMapper;
   }
 
@@ -55,14 +55,14 @@ public class ChatController {
   /// @param toolsCalled tools called, in order
   public record ChatResponse(String answer, List<ToolCall> toolsCalled) {}
 
-  /// Answers a prompt with the Quote agent.
+  /// Answers a prompt with the Market data agent.
   ///
   /// @param chatRequest the user's prompt
   /// @return the answer and the tools called
   @PostMapping
   public ChatResponse chat(@Valid @RequestBody ChatRequest chatRequest) {
     long startNanos = System.nanoTime();
-    Result<String> agentResult = quoteAgent.answer(chatRequest.message());
+    Result<String> agentResult = marketDataAgent.answer(chatRequest.message());
     List<ToolCall> toolsCalled =
         agentResult.toolExecutions().stream().map(this::toToolCall).toList();
     logAnswerProvenance(agentResult, toolsCalled, startNanos);
@@ -80,8 +80,8 @@ public class ChatController {
       Result<String> agentResult, List<ToolCall> toolsCalled, long startNanos) {
     TokenUsage tokenUsage = agentResult.tokenUsage();
     Map<String, Object> provenanceData = new LinkedHashMap<>();
-    provenanceData.put("agentName", QuoteAgentConfig.QUOTE_AGENT_NAME);
-    provenanceData.put("promptId", QuoteAgent.PROMPT_ID);
+    provenanceData.put("agentName", MarketDataAgentConfig.MARKET_DATA_AGENT_NAME);
+    provenanceData.put("promptId", MarketDataAgent.PROMPT_ID);
     provenanceData.put("toolsUsed", toolsCalled.stream().map(ToolCall::name).toList());
     provenanceData.put("inputTokenCount", tokenUsage == null ? null : tokenUsage.inputTokenCount());
     provenanceData.put(

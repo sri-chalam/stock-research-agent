@@ -3,6 +3,8 @@ package info.saagar.stockagent.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.langchain4j.model.chat.ChatModel;
+import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -149,8 +151,8 @@ class ChatLoggingTest {
     Map<String, Object> answerProvenance = singleEvent(logLines, "answerProvenance");
     assertThat((String) answerProvenance.get("traceId")).matches(UUID_PATTERN);
     assertThat(eventData(answerProvenance))
-        .containsEntry("agentName", "quote")
-        .containsEntry("promptId", "quote-agent-v1")
+        .containsEntry("agentName", MarketDataAgentConfig.MARKET_DATA_AGENT_NAME)
+        .containsEntry("promptId", MarketDataAgent.PROMPT_ID)
         .containsEntry("toolsUsed", List.of("getQuote"))
         .containsEntry("inputTokenCount", 20)
         .containsEntry("outputTokenCount", 10)

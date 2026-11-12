@@ -41,36 +41,36 @@ class McpClientConfigTest {
     fakeMcpServer.close();
   }
 
-  private ToolProviderResult quoteToolsAllowing(List<String> allowedTools) {
+  private ToolProviderResult marketDataToolsAllowing(List<String> allowedTools) {
     AgentProperties agentProperties =
         new AgentProperties(
             Map.of(
-                QuoteAgentConfig.QUOTE_AGENT_NAME,
+                MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
                 new AgentProperties.AgentSettings(
                     "claude-haiku-5-5", 1024, Duration.ofSeconds(30), 4, allowedTools)));
-    return new QuoteAgentConfig()
-        .quoteToolProvider(marketDataMcpClient, agentProperties)
+    return new MarketDataAgentConfig()
+        .marketDataToolProvider(marketDataMcpClient, agentProperties)
         .provideTools(TOOL_PROVIDER_REQUEST);
   }
 
   @Test
-  void quoteAgentSeesOnlyTheToolsOnItsAllowlist() {
-    ToolProviderResult quoteTools = quoteToolsAllowing(List.of("getQuote"));
+  void marketDataAgentSeesOnlyTheToolsOnItsAllowlist() {
+    ToolProviderResult marketDataTools = marketDataToolsAllowing(List.of("getQuote"));
 
-    assertThat(quoteTools.tools().keySet())
+    assertThat(marketDataTools.tools().keySet())
         .extracting(ToolSpecification::name)
         .containsExactly("getQuote");
   }
 
   @Test
   void emptyAllowlistMeansNoTools() {
-    assertThat(quoteToolsAllowing(List.of()).tools()).isEmpty();
+    assertThat(marketDataToolsAllowing(List.of()).tools()).isEmpty();
   }
 
   @Test
   void toolCallCarriesTheRequestCorrelationHeaders() {
     ToolExecutor getQuoteExecutor =
-        quoteToolsAllowing(List.of("getQuote")).toolExecutorByName("getQuote");
+        marketDataToolsAllowing(List.of("getQuote")).toolExecutorByName("getQuote");
     MDC.put("correlationId", "corr-123");
     MDC.put("traceId", "trace-456");
 

@@ -17,7 +17,7 @@ import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolExecution;
 import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
-import info.saagar.stockagent.agent.QuoteAgent;
+import info.saagar.stockagent.agent.MarketDataAgent;
 import info.saagar.stockagent.logging.ToolExecutionLogger;
 import java.time.Duration;
 import java.util.ArrayList;
@@ -26,9 +26,9 @@ import java.util.Map;
 import org.junit.jupiter.api.Test;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Drives the Quote agent built by [QuoteAgentConfig] with a scripted model and an in-memory tool
-/// provider standing in for the MCP server.
-class QuoteAgentWiringTest {
+/// Drives the Market data agent built by [MarketDataAgentConfig] with a scripted model and an
+/// in-memory tool provider standing in for the MCP server.
+class MarketDataAgentWiringTest {
 
   private static final String AAPL_QUOTE_JSON = "{\"symbol\":\"AAPL\",\"currentPrice\":189.42}";
   private static final String NO_QUOTE_MESSAGE =
@@ -58,7 +58,7 @@ class QuoteAgentWiringTest {
   private static final AgentProperties AGENT_PROPERTIES =
       new AgentProperties(
           Map.of(
-              QuoteAgentConfig.QUOTE_AGENT_NAME,
+              MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
               new AgentProperties.AgentSettings(
                   "claude-haiku-5-5", 1024, Duration.ofSeconds(30), 4, List.of("getQuote"))));
 
@@ -95,9 +95,9 @@ class QuoteAgentWiringTest {
     }
   }
 
-  private static QuoteAgent quoteAgent(ChatModel chatModel) {
-    return new QuoteAgentConfig()
-        .quoteAgent(
+  private static MarketDataAgent marketDataAgent(ChatModel chatModel) {
+    return new MarketDataAgentConfig()
+        .marketDataAgent(
             chatModel,
             FAKE_MARKET_DATA_TOOLS,
             AGENT_PROPERTIES,
@@ -108,7 +108,7 @@ class QuoteAgentWiringTest {
   void callsGetQuoteAndAnswersFromItsResult() {
     RecordingQuoteChatModel chatModel = new RecordingQuoteChatModel("AAPL");
 
-    Result<String> agentResult = quoteAgent(chatModel).answer("price of Apple");
+    Result<String> agentResult = marketDataAgent(chatModel).answer("price of Apple");
 
     assertThat(agentResult.content()).isEqualTo("Tool said: " + AAPL_QUOTE_JSON);
     assertThat(agentResult.toolExecutions())
@@ -124,7 +124,7 @@ class QuoteAgentWiringTest {
   void toolErrorTextIsSentToTheModel() {
     RecordingQuoteChatModel chatModel = new RecordingQuoteChatModel("XYZ");
 
-    Result<String> agentResult = quoteAgent(chatModel).answer("price of Zorblax");
+    Result<String> agentResult = marketDataAgent(chatModel).answer("price of Zorblax");
 
     assertThat(chatModel.toolResultTextsSeen).containsExactly(NO_QUOTE_MESSAGE);
     assertThat(agentResult.content()).isEqualTo("Tool said: " + NO_QUOTE_MESSAGE);
