@@ -29,20 +29,62 @@ buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
 ```
 
-## Iteration 0: quote agent skeleton
+## Run locally
 
-`POST /api/chat` runs a single Quote agent (Claude Haiku 5.5) that calls a local `getQuote` tool backed by fixed fake quotes (AAPL, MSFT, NVDA, TSLA, AMZN, GOOGL, NFLX).
+Two apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Quote agent (Claude Haiku 5.5). To get a price, the agent calls the `getQuote` tool on `market-data-mcp` over MCP. `market-data-mcp` fetches the quote from Finnhub and returns it to the agent:
 
-```bash
-export ANTHROPIC_API_KEY=...
-./gradlew :agent-app:bootRun
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -d '{"message":"price of Apple"}'
-# {"answer":"...189.42...","toolsCalled":[{"name":"getQuote","arguments":{"symbol":"AAPL"}}]}
+```
+curl → agent-app :8080 (/api/chat, Quote agent) → MCP client → market-data-mcp :8081 (/mcp, getQuote) → Finnhub API
 ```
 
-- Model, max tokens, timeout and max steps are per agent in `application.yml` (`stock-agent.agents.quote`).
+### 1. Set environment variables
+
+| Variable | Used by | Required |
+|---|---|---|
+| `FINNHUB_API_KEY` | `market-data-mcp` | Yes; startup fails without it. Get a free key at finnhub.io |
+| `ANTHROPIC_API_KEY` | `agent-app` | Yes |
+| `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
+
+The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
+
+### 2. Start the servers, MCP server first
+
+`agent-app` fails to start when `market-data-mcp` is unreachable.
+
+```bash
+# terminal 1
+export FINNHUB_API_KEY=...
+./gradlew :market-data-mcp:bootRun
+
+# terminal 2 (after market-data-mcp has started)
+export ANTHROPIC_API_KEY=...
+./gradlew :agent-app:bootRun
+```
+
+### 3. Sample prompts
+
+```bash
+# Company name resolved to a ticker
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What is the stock price of Apple?"}'
+# {"answer":"...","toolsCalled":[{"name":"getQuote","arguments":{"symbol":"AAPL"}}]}
+
+# Price move for the day
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"How is NVDA trading today? Include the percent change and day range."}'
+
+# Unsupported symbol: the tool returns a model-readable error that the agent explains
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Price of 7203.T on the Tokyo exchange?"}'
+```
+
+Prices are live Finnhub quotes, so answers vary. Only US-listed equities are supported.
+
+### Notes
+
+- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.quote`).
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
-- Tests use a scripted fake `ChatModel`; no live model call.
-- Deviation from spec §14: Docker Compose is deferred to Iteration 1.
+- Tests use a scripted fake `ChatModel` and a fake Finnhub client; no live model or Finnhub call.
+- Deviation from spec §14: Docker Compose is not set up yet.
 
 See section 14 of the spec for the full build plan.
