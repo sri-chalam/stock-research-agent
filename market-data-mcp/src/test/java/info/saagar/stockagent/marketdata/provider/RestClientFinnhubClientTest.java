@@ -11,7 +11,11 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 
 import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
+import java.time.LocalDate;
+import java.util.List;
 import java.util.Optional;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -110,5 +114,235 @@ class RestClientFinnhubClientTest {
     assertThatThrownBy(() -> finnhubClient.fetchQuote("AAPL"))
         .isInstanceOf(MarketDataException.class)
         .hasMessage("Market data provider timed out.");
+  }
+
+  @Test
+  void returnsTrimmedCompanyProfileAndIgnoresExtraFields() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/stock/profile2?symbol=AAPL"))
+        .andExpect(header("X-Finnhub-Token", FINNHUB_API_KEY))
+        .andRespond(
+            withSuccess(
+                """
+                {"country":"US","currency":"USD","exchange":"NASDAQ","finnhubIndustry":"Technology",\
+                "ipo":"1980-12-12","logo":"https://example.com/logo.png","marketCapitalization":2900000.5,\
+                "name":"Synthetic Apple Inc","phone":"555-0100","shareOutstanding":15300.25,\
+                "ticker":"AAPL","weburl":"https://example.com/"}""",
+                MediaType.APPLICATION_JSON));
+
+    assertThat(finnhubClient.fetchCompanyProfile("AAPL"))
+        .contains(
+            new CompanyProfile(
+                "AAPL",
+                "Synthetic Apple Inc",
+                "NASDAQ",
+                "Technology",
+                "US",
+                new BigDecimal("2900000.5"),
+                new BigDecimal("15300.25"),
+                "1980-12-12",
+                "https://example.com/"));
+    finnhubServer.verify();
+  }
+
+  @Test
+  void returnsEmptyProfileWhenFinnhubHasNoneForSymbol() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/stock/profile2?symbol=ZZZZ"))
+        .andRespond(withSuccess("{}", MediaType.APPLICATION_JSON));
+
+    assertThat(finnhubClient.fetchCompanyProfile("ZZZZ")).isEmpty();
+  }
+
+  @Test
+  void returnsTenNewestCompanyNewsArticlesWithTrimmedFields() {
+    finnhubServer
+        .expect(
+            requestTo(FINNHUB_BASE_URL + "/company-news?symbol=AAPL&from=2026-04-01&to=2026-04-30"))
+        .andExpect(header("X-Finnhub-Token", FINNHUB_API_KEY))
+        .andRespond(withSuccess(newsItemsJson(12), MediaType.APPLICATION_JSON));
+
+    List<NewsArticle> articles =
+        finnhubClient.fetchCompanyNews(
+            "AAPL", LocalDate.parse("2026-04-01"), LocalDate.parse("2026-04-30"));
+
+    assertThat(articles).hasSize(10);
+    assertThat(articles.getFirst())
+        .isEqualTo(
+            new NewsArticle(
+                "Headline 12",
+                "Synthetic Wire",
+                "2026-05-01T14:30:12Z",
+                "Summary 12",
+                "https://example.com/news/12"));
+    assertThat(articles.getLast().headline()).isEqualTo("Headline 3");
+    finnhubServer.verify();
+  }
+
+  @Test
+  void cutsLongNewsSummaryToAtMostThreeHundredCharacters() {
+    String longSummary = "word ".repeat(100).strip();
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/news?category=general"))
+        .andRespond(
+            withSuccess(
+                """
+                [{"category":"top news","datetime":1777645800,"headline":"Long","id":1,\
+                "image":"https://example.com/i.png","related":"","source":"Synthetic Wire",\
+                "summary":"%s","url":"https://example.com/news/1"}]"""
+                    .formatted(longSummary),
+                MediaType.APPLICATION_JSON));
+
+    String cutSummary =
+        finnhubClient.fetchMarketNews(MarketNewsCategory.GENERAL).getFirst().summary();
+
+    assertThat(cutSummary).hasSizeLessThanOrEqualTo(300).endsWith("word…");
+    assertThat(longSummary).startsWith(cutSummary.substring(0, cutSummary.length() - 1));
+  }
+
+  @Test
+  void returnsTenNewestMarketNewsArticles() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/news?category=merger"))
+        .andRespond(withSuccess(newsItemsJson(15), MediaType.APPLICATION_JSON));
+
+    List<NewsArticle> articles = finnhubClient.fetchMarketNews(MarketNewsCategory.MERGER);
+
+    assertThat(articles)
+        .extracting(NewsArticle::headline)
+        .hasSize(10)
+        .first()
+        .isEqualTo("Headline 15");
+  }
+
+  @Test
+  void returnsAtMostTwentyFiveEarliestEarningsEventsWithTrimmedFields() {
+    String earningsRowsJson =
+        IntStream.rangeClosed(1, 30)
+            .mapToObj(
+                rowNumber ->
+                    """
+                    {"date":"2026-05-%02d","epsActual":null,"epsEstimate":1.5,"hour":"amc",\
+                    "quarter":2,"revenueActual":null,"revenueEstimate":1000000,"symbol":"SYN%d",\
+                    "year":2026,"extraField":"ignored"}"""
+                        .formatted(31 - rowNumber, rowNumber))
+            .collect(Collectors.joining(",", "{\"earningsCalendar\":[", "]}"));
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/calendar/earnings?from=2026-05-01&to=2026-05-07"))
+        .andRespond(withSuccess(earningsRowsJson, MediaType.APPLICATION_JSON));
+
+    List<EarningsEvent> earningsEvents =
+        finnhubClient.fetchEarningsCalendar(
+            LocalDate.parse("2026-05-01"), LocalDate.parse("2026-05-07"), null);
+
+    assertThat(earningsEvents).hasSize(25);
+    assertThat(earningsEvents.getFirst())
+        .isEqualTo(
+            new EarningsEvent(
+                "SYN30",
+                "2026-05-01",
+                "amc",
+                2026,
+                2,
+                new BigDecimal("1.5"),
+                null,
+                new BigDecimal("1000000"),
+                null));
+    assertThat(earningsEvents.getLast().date()).isEqualTo("2026-05-25");
+  }
+
+  @Test
+  void sendsSymbolToEarningsCalendarWhenGiven() {
+    finnhubServer
+        .expect(
+            requestTo(
+                FINNHUB_BASE_URL + "/calendar/earnings?from=2026-01-01&to=2026-06-30&symbol=AAPL"))
+        .andRespond(withSuccess("{\"earningsCalendar\":[]}", MediaType.APPLICATION_JSON));
+
+    assertThat(
+            finnhubClient.fetchEarningsCalendar(
+                LocalDate.parse("2026-01-01"), LocalDate.parse("2026-06-30"), "AAPL"))
+        .isEmpty();
+    finnhubServer.verify();
+  }
+
+  @Test
+  void returnsTheFixedMetricsAndIgnoresSeriesAndOtherMetrics() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/stock/metric?symbol=AAPL&metric=all"))
+        .andExpect(header("X-Finnhub-Token", FINNHUB_API_KEY))
+        .andRespond(
+            withSuccess(
+                """
+                {"metric":{"10DayAverageTradingVolume":50.1,"52WeekHigh":199.62,\
+                "52WeekHighDate":"2026-01-02","52WeekLow":164.08,"peTTM":29.5,"pb":45.1,\
+                "epsTTM":6.4,"dividendYieldIndicatedAnnual":0.52,"beta":1.25,\
+                "grossMarginTTM":45.2,"operatingMarginTTM":30.1,"netProfitMarginTTM":25.3,\
+                "roeTTM":150.2,"totalDebt/totalEquityQuarterly":1.8},\
+                "metricType":"all","series":{"annual":{"eps":[{"period":"2025-09-30","v":6.1}]}},\
+                "symbol":"AAPL"}""",
+                MediaType.APPLICATION_JSON));
+
+    assertThat(finnhubClient.fetchBasicFinancials("AAPL"))
+        .contains(
+            new BasicFinancials(
+                "AAPL",
+                new BigDecimal("199.62"),
+                new BigDecimal("164.08"),
+                new BigDecimal("29.5"),
+                new BigDecimal("45.1"),
+                new BigDecimal("6.4"),
+                new BigDecimal("0.52"),
+                new BigDecimal("1.25"),
+                new BigDecimal("45.2"),
+                new BigDecimal("30.1"),
+                new BigDecimal("25.3"),
+                new BigDecimal("150.2"),
+                new BigDecimal("1.8")));
+    finnhubServer.verify();
+  }
+
+  @Test
+  void returnsEmptyFinancialsWhenFinnhubHasNoMetrics() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/stock/metric?symbol=ZZZZ&metric=all"))
+        .andRespond(
+            withSuccess(
+                """
+                {"metric":{},"metricType":"all","series":{},"symbol":"ZZZZ"}""",
+                MediaType.APPLICATION_JSON));
+
+    assertThat(finnhubClient.fetchBasicFinancials("ZZZZ")).isEmpty();
+  }
+
+  @Test
+  void mapsRateLimitOnNewEndpointsToFixedMessage() {
+    finnhubServer
+        .expect(requestTo(FINNHUB_BASE_URL + "/news?category=general"))
+        .andRespond(withStatus(HttpStatus.TOO_MANY_REQUESTS));
+
+    assertThatThrownBy(() -> finnhubClient.fetchMarketNews(MarketNewsCategory.GENERAL))
+        .isInstanceOf(MarketDataException.class)
+        .hasMessage("Market data rate limit reached; try again in a minute.");
+  }
+
+  /// Builds `articleCount` synthetic articles out of time order; article N is published N seconds
+  /// after 2026-05-01T14:30:00Z. `articleCount` must not be a multiple of 7.
+  private static String newsItemsJson(int articleCount) {
+    return IntStream.range(0, articleCount)
+        .map(position -> position * 7 % articleCount + 1)
+        .mapToObj(
+            articleNumber ->
+                """
+                {"category":"company","datetime":%d,"headline":"Headline %d","id":%d,\
+                "image":"https://example.com/i.png","related":"AAPL","source":"Synthetic Wire",\
+                "summary":"Summary %d","url":"https://example.com/news/%d"}"""
+                    .formatted(
+                        1777645800L + articleNumber,
+                        articleNumber,
+                        articleNumber,
+                        articleNumber,
+                        articleNumber))
+        .collect(Collectors.joining(",", "[", "]"));
   }
 }
