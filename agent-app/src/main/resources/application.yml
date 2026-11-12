@@ -17,3 +17,13 @@ stock-agent:
       max-tokens: 1024
       timeout: 30s
       max-steps: 4
+      # MCP tools this agent may see and call. An empty list means no tools.
+      allowed-tools: [getQuote]
+  # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
+  # when one is unreachable, so start market-data-mcp first.
+  mcp-servers:
+    market-data:
+      url: ${MARKET_DATA_MCP_URL:http://localhost:8081/mcp}
+      # Pinned so the client skips the server/discover probe, which our servers do not answer.
+      protocol-version: 2025-11-25
+      tool-execution-timeout: 10s

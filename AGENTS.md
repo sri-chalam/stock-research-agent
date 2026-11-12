@@ -59,14 +59,20 @@ Package by layer under `info.saagar.stockagent`:
 |---|---|
 | `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `QuoteAgent`) |
-| `tool` | LangChain4j `@Tool` classes and their helpers (e.g. `QuoteTools`, `ToolArguments`) |
-| `provider` | Interfaces over external data sources, their implementations and result records (e.g. `QuoteProvider`, `FakeQuoteProvider`, `Quote`) |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `LangChain4jConfig`) |
-| `logging` | Agent-app-only logging support (`ToolExecutionLogger`) |
+| `tool` | Tool-call helpers (`ToolArguments`). agent-app has no `@Tool` classes: tools come from MCP servers |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `QuoteAgentConfig`, `McpClientConfig`) |
+| `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
 
 Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpApplication`, which also scans `info.saagar.stockagent.common`).
+
+| Package | Contents |
+|---|---|
+| `controller` | `McpController`: the `POST /mcp` Streamable HTTP transport around the LangChain4j `McpServer` |
+| `tool` | LangChain4j `@Tool` classes served over MCP and their helpers (`MarketDataTools`, `TickerSymbols`) |
+| `provider` | Finnhub client interface, implementation and result records (`FinnhubClient`, `RestClientFinnhubClient`, `Quote`, `MarketDataException`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`) |
 
 ### `common`
 

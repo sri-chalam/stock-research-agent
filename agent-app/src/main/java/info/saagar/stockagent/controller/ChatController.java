@@ -4,7 +4,7 @@ import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.Result;
 import dev.langchain4j.service.tool.ToolExecution;
 import info.saagar.stockagent.agent.QuoteAgent;
-import info.saagar.stockagent.config.LangChain4jConfig;
+import info.saagar.stockagent.config.QuoteAgentConfig;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -80,7 +80,7 @@ public class ChatController {
       Result<String> agentResult, List<ToolCall> toolsCalled, long startNanos) {
     TokenUsage tokenUsage = agentResult.tokenUsage();
     Map<String, Object> provenanceData = new LinkedHashMap<>();
-    provenanceData.put("agentName", LangChain4jConfig.QUOTE_AGENT_NAME);
+    provenanceData.put("agentName", QuoteAgentConfig.QUOTE_AGENT_NAME);
     provenanceData.put("promptId", QuoteAgent.PROMPT_ID);
     provenanceData.put("toolsUsed", toolsCalled.stream().map(ToolCall::name).toList());
     provenanceData.put("inputTokenCount", tokenUsage == null ? null : tokenUsage.inputTokenCount());

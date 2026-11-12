@@ -21,10 +21,17 @@ import org.springframework.web.filter.OncePerRequestFilter;
 @Order(Ordered.HIGHEST_PRECEDENCE)
 public class LoggingContextFilter extends OncePerRequestFilter {
 
-  static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
-  static final String TRACE_ID_HEADER = "X-Trace-Id";
-  static final String CORRELATION_ID_KEY = "correlationId";
-  static final String TRACE_ID_KEY = "traceId";
+  /// Request header that carries the correlation ID between services.
+  public static final String CORRELATION_ID_HEADER = "X-Correlation-Id";
+
+  /// Request header that carries the trace ID between services.
+  public static final String TRACE_ID_HEADER = "X-Trace-Id";
+
+  /// MDC key of the correlation ID.
+  public static final String CORRELATION_ID_KEY = "correlationId";
+
+  /// MDC key of the trace ID.
+  public static final String TRACE_ID_KEY = "traceId";
 
   private static final Pattern SAFE_ID_PATTERN = Pattern.compile("^[A-Za-z0-9-]{1,64}$");
 

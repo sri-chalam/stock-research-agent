@@ -7,3 +7,10 @@ spring:
 server:
   port: 8081
   address: 127.0.0.1
+
+# Finnhub REST API. The key comes from the FINNHUB_API_KEY environment variable and is sent in the
+# X-Finnhub-Token header; startup fails without it.
+finnhub:
+  base-url: https://finnhub.io/api/v1
+  connect-timeout: 2s
+  read-timeout: 5s

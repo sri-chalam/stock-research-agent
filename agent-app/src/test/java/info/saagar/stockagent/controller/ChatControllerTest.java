@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.langchain4j.model.chat.ChatModel;
 import info.saagar.stockagent.controller.ChatController.ChatResponse;
+import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -16,6 +17,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(
@@ -23,6 +26,13 @@ import tools.jackson.databind.json.JsonMapper;
     properties = "ANTHROPIC_API_KEY=test-key")
 @Import(ChatControllerTest.FakeModelConfig.class)
 class ChatControllerTest {
+
+  private static final FakeMcpServer FAKE_MARKET_DATA_MCP = FakeMcpServer.start("getQuote");
+
+  @DynamicPropertySource
+  static void pointAgentAtFakeMcpServer(DynamicPropertyRegistry propertyRegistry) {
+    propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
+  }
 
   @TestConfiguration
   static class FakeModelConfig {
@@ -84,7 +94,7 @@ class ChatControllerTest {
     ChatResponse response = postChat("price of Zorblax");
 
     assertThat(response.answer())
-        .contains("No quote available for symbol XYZ. Only US equities are supported.");
+        .contains("No quote available for symbol XYZ. Only US-listed equities are supported.");
     assertThat(response.toolsCalled())
         .extracting(ChatController.ToolCall::name)
         .containsExactly("getQuote");
