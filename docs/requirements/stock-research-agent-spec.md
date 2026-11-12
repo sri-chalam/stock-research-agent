@@ -169,7 +169,7 @@ flowchart TD
 |---|---|---|---|---|---|
 | 1 | **Supervisor** | Understand request, plan, delegate to specialists, merge results | Specialist agents | Haiku 5.5 (Sonnet if evals require) | Iteration 3 |
 | 2 | **Filings analyst** | Answer from 10-K/10-Q/8-K via RAG, with section citations | filings-mcp, pgvector | Haiku 5.5 (Sonnet candidate) | Iteration 3 |
-| 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 3 |
+| 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
 | 4 | **News & sentiment agent** | Summarize company/market news; treats articles as **untrusted input** | market-data-mcp (news) | Haiku 5.5 | Iteration 3b |
 | 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp, macro-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
 | 6 | **Critic** | Verify every number and claim in the draft answer against tool outputs before returning | Tool outputs of the run | Haiku 5.5 | Iteration 3d |
@@ -446,7 +446,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | # | Iteration | Scope | Acceptance criteria |
 |---|---|---|---|
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
-| **1a** | `market-data-mcp` | Multi-module Gradle build (`agent-app`, `market-data-mcp`, `logging-common`); Streamable HTTP over `langchain4j-community-mcp-server`; six Finnhub tools; agent uses MCP client with a per-agent tool allowlist; correlation headers sent on MCP calls | `POST /api/chat` "price of Apple" returns a live Finnhub price through `market-data-mcp` `getQuote`; `agent-app` has no local tools and no Finnhub key reference; the other five tools answer `tools/call` with trimmed output; one request's logs share a `correlationId` across both apps |
+| **1a** | `market-data-mcp` | Multi-module Gradle build (`agent-app`, `market-data-mcp`, `logging-common`); Streamable HTTP over `langchain4j-community-mcp-server`; six Finnhub tools; agent uses MCP client with a per-agent tool allowlist; the Quote agent is renamed the Market data agent and gets all six tools; correlation headers sent on MCP calls | `POST /api/chat` "price of Apple" returns a live Finnhub price through `market-data-mcp` `getQuote`; `agent-app` has no local tools and no Finnhub key reference; the other five tools answer `tools/call` with trimmed output and are reachable through `POST /api/chat`; one request's logs share a `correlationId` across both apps |
 | **1b** | `filings-mcp` | SEC EDGAR server; shared `mcp-common` module extracted from the two servers | Agent answers filings questions through `filings-mcp` tools only |
 | **1c** | `macro-mcp` | FRED server | Agent answers macro questions through `macro-mcp` tools only; upstream keys only in MCP servers |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |

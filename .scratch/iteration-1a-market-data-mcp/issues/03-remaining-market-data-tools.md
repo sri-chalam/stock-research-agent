@@ -1,6 +1,6 @@
 # 03: The remaining five market-data tools
 
-**What to build:** Add `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials` to `market-data-mcp`. Each answers `tools/call` with trimmed output (MCP-2) and readable errors (MCP-5). The Quote agent's allowlist stays `[getQuote]`, so these are checked by direct `tools/call`, not through chat. The Market data agent arrives in Iteration 3.
+**What to build:** Add `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials` to `market-data-mcp`. Each answers `tools/call` with trimmed output (MCP-2) and readable errors (MCP-5). The agent that served quotes is renamed the Market data agent in this iteration (Iteration 1a), and all six tools are on its allowlist, so they can be checked by direct `tools/call` and through `POST /api/chat`.
 
 **Blocked by:** 02
 
@@ -33,5 +33,8 @@
 - [ ] A curl `tools/call` against `localhost:8081/mcp` returns trimmed output for each of the five tools with a real key (manual check).
 - [ ] No tool returns raw Finnhub JSON or fields outside the lists above.
 - [ ] Out-of-range dates, an unsupported category and a bad ticker each return `isError: true` with a readable message.
+- [ ] `POST /api/chat` "Get Atlassian Company profile info. Stock symbol TEAM" calls `getCompanyProfile` (manual check).
 
 ## Comments
+
+- 2026-11-12: Moved forward from Iteration 3. The Quote agent is renamed the Market data agent (`MarketDataAgent`, `MarketDataAgentConfig`, config key `stock-agent.agents.market-data`, prompt `market-data-agent-v1`). Its allowlist now holds all six market-data tools, so they are usable through chat. Before this change a profile request was answered with `getQuote`, because the agent could only see that tool and its prompt covered prices only. The News & sentiment agent (Iteration 3b) will need its own allowlist for the news tools when it arrives.

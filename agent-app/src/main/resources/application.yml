@@ -12,13 +12,19 @@ server:
 # ANTHROPIC_API_KEY environment variable.
 stock-agent:
   agents:
-    quote:
+    market-data:
       model: claude-haiku-5-5
       max-tokens: 1024
       timeout: 30s
       max-steps: 4
       # MCP tools this agent may see and call. An empty list means no tools.
-      allowed-tools: [getQuote]
+      allowed-tools:
+        - getQuote
+        - getCompanyProfile
+        - getCompanyNews
+        - getMarketNews
+        - getEarningsCalendar
+        - getBasicFinancials
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
   # when one is unreachable, so start market-data-mcp first.
   mcp-servers:
