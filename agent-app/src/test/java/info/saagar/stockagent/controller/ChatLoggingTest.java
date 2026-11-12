@@ -3,6 +3,7 @@ package info.saagar.stockagent.controller;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.langchain4j.model.chat.ChatModel;
+import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -21,6 +22,8 @@ import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.json.JsonMapper;
 
@@ -31,6 +34,13 @@ import tools.jackson.databind.json.JsonMapper;
 @Import(ChatLoggingTest.FakeModelConfig.class)
 @ExtendWith(OutputCaptureExtension.class)
 class ChatLoggingTest {
+
+  private static final FakeMcpServer FAKE_MARKET_DATA_MCP = FakeMcpServer.start("getQuote");
+
+  @DynamicPropertySource
+  static void pointAgentAtFakeMcpServer(DynamicPropertyRegistry propertyRegistry) {
+    propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
+  }
 
   private static final String FAILING_PROMPT = "please fail";
   private static final String FORCED_FAILURE_MESSAGE = "Forced model failure for logging test";
@@ -147,6 +157,22 @@ class ChatLoggingTest {
         .containsEntry("totalTokenCount", 30);
     assertThat(eventData(answerProvenance).get("completeExecDurationTimeMs"))
         .isInstanceOf(Number.class);
+  }
+
+  @Test
+  void correlationIdIsForwardedToTheMcpServer() throws Exception {
+    String correlationId = "corr-" + UUID.randomUUID();
+
+    HttpResponse<String> httpResponse =
+        postChat("price of Apple", Map.of("X-Correlation-Id", correlationId));
+
+    assertThat(httpResponse.statusCode()).isEqualTo(200);
+    assertThat(FAKE_MARKET_DATA_MCP.toolCallHeaders())
+        .anySatisfy(
+            toolCallHeaders -> {
+              assertThat(toolCallHeaders).containsEntry("X-Correlation-Id", correlationId);
+              assertThat(toolCallHeaders.get("X-Trace-Id")).matches(UUID_PATTERN);
+            });
   }
 
   @Test

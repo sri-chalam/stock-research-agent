@@ -1,6 +1,7 @@
 package info.saagar.stockagent.config;
 
 import java.time.Duration;
+import java.util.List;
 import java.util.Map;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -10,13 +11,21 @@ import org.springframework.boot.context.properties.ConfigurationProperties;
 @ConfigurationProperties("stock-agent")
 public record AgentProperties(Map<String, AgentSettings> agents) {
 
-  /// Model and bounded-autonomy settings for one agent.
+  /// Model, bounded-autonomy and tool settings for one agent.
   ///
   /// @param model model ID, e.g. `claude-haiku-5-5`
   /// @param maxTokens maximum output tokens per LLM call
   /// @param timeout per-call timeout
   /// @param maxSteps maximum sequential tool invocations per run
-  public record AgentSettings(String model, int maxTokens, Duration timeout, int maxSteps) {}
+  /// @param allowedTools names of the MCP tools the agent may see and call; empty means none
+  public record AgentSettings(
+      String model, int maxTokens, Duration timeout, int maxSteps, List<String> allowedTools) {
+
+    /// Treats a missing `allowed-tools` as an empty allowlist, never as "all tools".
+    public AgentSettings {
+      allowedTools = allowedTools == null ? List.of() : List.copyOf(allowedTools);
+    }
+  }
 
   /// Returns the settings for an agent.
   ///
