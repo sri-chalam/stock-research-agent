@@ -45,7 +45,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ## Prerequisites
 
 - Java 25
-- Docker (for later iterations: Postgres/pgvector)
+- Docker with Compose (optional; runs both apps with `docker compose up`)
 
 ## Build and run
 
@@ -83,7 +83,11 @@ curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → marke
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
-### 2. Start the servers, MCP server first
+### 2. Start the servers
+
+Use either Gradle or Docker Compose. Both bind ports 8080 and 8081 on `127.0.0.1`, so run only one of them at a time.
+
+#### Option A: Gradle, MCP server first
 
 `agent-app` fails to start when `market-data-mcp` is unreachable.
 
@@ -96,6 +100,22 @@ export FINNHUB_API_KEY=...
 export ANTHROPIC_API_KEY=...
 ./gradlew :agent-app:bootRun
 ```
+
+#### Option B: Docker Compose
+
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `agent-app` after `market-data-mcp` passes its health check (`/actuator/health`).
+
+```bash
+cp .env.example .env            # then fill in FINNHUB_API_KEY and ANTHROPIC_API_KEY
+
+docker compose up --build -d    # build the images and start both apps in the background
+docker compose ps               # both services Up; market-data-mcp shows (healthy)
+docker compose logs -f          # follow both apps' logs (Ctrl+C stops following, not the apps)
+
+docker compose down             # stop and remove both containers and the network
+```
+
+Leave out `-d` to run in the foreground; Ctrl+C then stops both apps. Inside Compose, `agent-app` reaches the MCP server at `http://market-data-mcp:8081/mcp`. The sample prompts and `curl` calls below work unchanged.
 
 ### 3. Sample prompts
 
@@ -203,6 +223,5 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
 - Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`).
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
 - Tests use a scripted fake `ChatModel` and a fake Finnhub client; no live model or Finnhub call.
-- Deviation from spec §14: Docker Compose is not set up yet.
 
 See section 14 of the spec for the full build plan.

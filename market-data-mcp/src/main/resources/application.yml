@@ -8,6 +8,13 @@ server:
   port: 8081
   address: 127.0.0.1
 
+# Only /actuator/health is exposed; Docker Compose uses it as the healthcheck.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
 # Finnhub REST API. The key comes from the FINNHUB_API_KEY environment variable and is sent in the
 # X-Finnhub-Token header; startup fails without it.
 finnhub:

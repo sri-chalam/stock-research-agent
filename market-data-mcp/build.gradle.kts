@@ -7,6 +7,7 @@ dependencies {
     implementation(platform(libs.langchain4j.bom))
 
     implementation(libs.spring.boot.starter.web)
+    implementation(libs.spring.boot.starter.actuator)
     implementation(libs.langchain4j)
     implementation(libs.langchain4j.community.mcp.server)
 
