@@ -65,6 +65,18 @@ buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
 ```
 
+## Ports
+
+All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
+
+| App | Port | Endpoint | Status |
+|---|---|---|---|
+| `agent-app` | 8080 | `/api/chat` | Built |
+| `market-data-mcp` | 8081 | `/mcp` | Built |
+| `filings-mcp` | 8082 | `/mcp` | Reserved (Iteration 1b) |
+| `macro-mcp` | 8083 | `/mcp` | Reserved (Iteration 1c) |
+| `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
+
 ## Run locally
 
 Two apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Market data agent (Claude Haiku 5.5). The agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
