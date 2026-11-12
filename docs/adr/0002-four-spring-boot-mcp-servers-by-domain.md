@@ -12,7 +12,7 @@ Tools are exposed to agents only through MCP servers (spec section 7.1). The too
 
 Four MCP servers are built, one per domain, each as a separate Spring Boot application using Streamable HTTP (stateless):
 
-- `market-data-mcp`: quotes, profile, news, earnings, financials (Finnhub only, see ADR 0007).
+- `market-data-mcp`: quotes, profile, news, earnings, financials (Finnhub only, see ADR 0007; built instead of using Finnhub's hosted MCP server, see ADR 0009).
 - `filings-mcp`: SEC EDGAR filings, XBRL facts, filings search.
 - `macro-mcp`: FRED series.
 - `portfolio-mcp`: holdings, watchlist, sector exposure, paper-trade proposals (application Postgres).

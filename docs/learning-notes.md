@@ -27,6 +27,17 @@ Short points worth remembering: how things work and what tripped us up. Design d
 
 - Both apps set `server.address: 127.0.0.1`, so they listen on IPv4 loopback only. Call them at `http://127.0.0.1:<port>`, not `localhost`. Some clients (Postman and other Node-based tools) resolve `localhost` to IPv6 `::1` and fail with `ECONNREFUSED ::1:8080`; curl falls back to IPv4, so it hides the problem.
 
+## MCP
+
+- `langchain4j-community-mcp-server` ships only a stdio transport. `market-data-mcp` serves it over HTTP through its own `POST /mcp` controller. See [ADR 0010](adr/0010-mcp-transport-spring-mvc-controller.md).
+- JSON-RPC ids must be numbers. With a string id such as `"id":"1"`, the library treats the message as a notification and sends no reply.
+- The server is stateless, so a direct `curl` to `/mcp` can call `tools/list` or `tools/call` without calling `initialize` first.
+- The LangChain4j MCP client sends `ping` as its health check, and `McpServer` doesn't answer it, so the controller answers `ping` itself.
+- agent-app pins MCP protocol version `2025-11-25`. Without the pin, the client sends a `server/discover` probe, which our servers don't support.
+- When a tool throws, the library turns the exception into an `isError: true` result and doesn't log it. Log the failure where it happens (for example `finnhubCallFailed` in the Finnhub client).
+- agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` first.
+- Finnhub's hosted MCP server supports only per-user OAuth for Claude and ChatGPT, so agent-app can't use it. It's still useful in Claude Desktop for exploration. See [ADR 0009](adr/0009-own-market-data-mcp-instead-of-finnhub-hosted-mcp.md).
+
 ## Git
 
 - Use `git mv` when moving files; `git log --follow <file>` then shows the history from before the move. This works only once the move is committed.
