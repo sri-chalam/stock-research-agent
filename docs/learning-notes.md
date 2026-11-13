@@ -38,6 +38,24 @@ Short points worth remembering: how things work and what tripped us up. Design d
 - agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` first.
 - Finnhub's hosted MCP server supports only per-user OAuth for Claude and ChatGPT, so agent-app can't use it. It's still useful in Claude Desktop for exploration. See [ADR 0009](adr/0009-own-market-data-mcp-instead-of-finnhub-hosted-mcp.md).
 
+### Runtime flow of a chat request
+
+```
+ChatController → agent.chat(prompt)                        (AiServices proxy)
+  → McpToolProvider → McpClient → POST /mcp  tools/list   (first request only, then cached; allowlist filter applied)
+  → Claude gets prompt + tool specs, replies "call getQuote(AAPL)"
+  → McpClient → POST /mcp  tools/call
+      → McpController → McpServer.handle → MarketDataTools.getQuote → Finnhub
+  → tool result back to Claude → final answer → ChatController
+```
+
+- No project code calls `/mcp`. LangChain4j's `StreamableHttpMcpTransport` (inside `DefaultMcpClient`, built in [McpClientConfig](../agent-app/src/main/java/info/saagar/stockagent/config/McpClientConfig.java)) sends every request.
+- The agent interface has no tool code. Claude picks the tool; the `AiServices` proxy runs it through the MCP client and loops until Claude returns text.
+- `DefaultMcpClient` caches the tool list (`cacheToolList` defaults to `true`). `McpToolProvider` asks for it on every request, but only the first one reaches the server. A restart of agent-app is the only way to pick up tool changes, since our stateless servers can't send `notifications/tools/list_changed`.
+- Outside chat requests, the client sends `initialize` at agent-app startup and `ping` as a health check.
+- `McpController` routing: it answers `ping` itself, wraps `tools/call` in `handleToolCall` (logging), and passes everything else to `McpServer.handle`.
+- `McpServer.handle` switches on `method`: `initialize` → `handleInitialize`, `tools/list` → `handleListTools`, `tools/call` → `handleCallTool` (invokes the `@Tool` method), anything else → "Method not found" error. A message with no numeric `id` returns `null`, so the controller replies `202 Accepted`.
+
 ## Git
 
 - Use `git mv` when moving files; `git log --follow <file>` then shows the history from before the move. This works only once the move is committed.

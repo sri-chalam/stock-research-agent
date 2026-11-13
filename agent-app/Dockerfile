@@ -9,7 +9,8 @@ COPY common common
 COPY agent-app agent-app
 # settings.gradle.kts includes every module, and Gradle 9 requires each included project's directory.
 COPY market-data-mcp/build.gradle.kts market-data-mcp/
-# The Gradle cache is shared by both images; `sharing=locked` stops their parallel builds from
+COPY filings-mcp/build.gradle.kts filings-mcp/
+# The Gradle cache is shared by all images; `sharing=locked` stops their parallel builds from
 # contending for Gradle's cache locks. Tests are skipped here only for Docker layer caching
 # (CLAUDE.md §9); `./gradlew build` runs them.
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \

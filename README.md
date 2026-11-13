@@ -18,7 +18,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 |---|---|---|---|
 | 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent only |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp` only |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
 | 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
@@ -45,7 +45,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ## Prerequisites
 
 - Java 25
-- Docker with Compose (optional; runs both apps with `docker compose up`)
+- Docker with Compose (optional; runs all apps with `docker compose up`)
 
 ## Build and run
 
@@ -53,6 +53,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ./gradlew build                     # compile and test all modules
 ./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
 ./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
+./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
 ```
 
 ## Project layout
@@ -60,6 +61,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ```
 agent-app/         agent app (info.saagar.stockagent)
 market-data-mcp/   market-data MCP server (info.saagar.stockagent.marketdata)
+filings-mcp/       SEC filings MCP server (info.saagar.stockagent.filings)
 common/            code and config (common.yml) shared by the apps (info.saagar.stockagent.common)
 buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
@@ -71,9 +73,9 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 
 | App | Port | Endpoint | Status |
 |---|---|---|---|
-| `agent-app` | 8080 | `/api/chat` | Built |
+| `agent-app` | 8080 | `/api/chat`, `/api/filings/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
-| `filings-mcp` | 8082 | `/mcp` | Reserved (Iteration 1b) |
+| `filings-mcp` | 8082 | `/mcp` | Built (`listFilings`) |
 | `macro-mcp` | 8083 | `/mcp` | Reserved (Iteration 1c) |
 | `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
 
@@ -85,40 +87,52 @@ Two apps run side by side. `agent-app` receives the chat request (`POST /api/cha
 curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
+The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. Its `listFilings` tool returns the 10 most recent 10-K, 10-Q or 8-K filings for about 20 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
+
+```
+curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
+```
+
 ### 1. Set environment variables
 
 | Variable | Used by | Required |
 |---|---|---|
 | `FINNHUB_API_KEY` | `market-data-mcp` | Yes; startup fails without it. Get a free key at finnhub.io |
+| `SEC_USER_AGENT` | `filings-mcp` | Yes; startup fails without it. SEC EDGAR requires contact details, e.g. `stock-research-agent you@example.com` |
 | `ANTHROPIC_API_KEY` | `agent-app` | Yes |
 | `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
+| `FILINGS_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8082/mcp` |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
 ### 2. Start the servers
 
-Use either Gradle or Docker Compose. Both bind ports 8080 and 8081 on `127.0.0.1`, so run only one of them at a time.
+Use either Gradle or Docker Compose. Both bind ports 8080, 8081 and 8082 on `127.0.0.1`, so run only one of them at a time.
 
-#### Option A: Gradle, MCP server first
+#### Option A: Gradle, MCP servers first
 
-`agent-app` fails to start when `market-data-mcp` is unreachable.
+`agent-app` fails to start when `market-data-mcp` or `filings-mcp` is unreachable.
 
 ```bash
 # terminal 1
 export FINNHUB_API_KEY=...
 ./gradlew :market-data-mcp:bootRun
 
-# terminal 2 (after market-data-mcp has started)
+# terminal 2
+export SEC_USER_AGENT="stock-research-agent you@example.com"
+./gradlew :filings-mcp:bootRun
+
+# terminal 3 (after both MCP servers have started)
 export ANTHROPIC_API_KEY=...
 ./gradlew :agent-app:bootRun
 ```
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `agent-app` after `market-data-mcp` passes its health check (`/actuator/health`).
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`).
 
 ```bash
-cp .env.example .env            # then fill in FINNHUB_API_KEY and ANTHROPIC_API_KEY
+cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
 docker compose up --build -d    # build the images and start both apps in the background
 docker compose ps               # both services Up; market-data-mcp shows (healthy)
@@ -212,6 +226,18 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 
 Data is live from Finnhub, so answers vary. Only US-listed equities are supported.
 
+**`listFilings`** (Filings analyst, `/api/filings/chat`): the 10 most recent filings of one form type, with sec.gov links.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+  -d '{"message":"List Microsoft'\''s recent 10-K filings"}'
+# {"answer":"...","toolsCalled":[{"name":"listFilings","arguments":{"ticker":"MSFT","formType":"10-K"}}]}
+
+# Unconfigured ticker: the error lists the supported tickers
+curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+  -d '{"message":"List IBM'\''s recent 10-Q filings"}'
+```
+
 ### 4. Call the MCP tools directly (optional)
 
 To check a tool's output without the agent or the model, send JSON-RPC to `market-data-mcp`. The server is stateless, so no `initialize` call is needed. JSON-RPC ids must be numbers.
@@ -232,8 +258,8 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
 
 ### Notes
 
-- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`).
+- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`, `stock-agent.agents.filings`).
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
-- Tests use a scripted fake `ChatModel` and a fake Finnhub client; no live model or Finnhub call.
+- Tests use a scripted fake `ChatModel` and fake Finnhub and EDGAR clients; no live model, Finnhub or EDGAR call.
 
 See section 14 of the spec for the full build plan.

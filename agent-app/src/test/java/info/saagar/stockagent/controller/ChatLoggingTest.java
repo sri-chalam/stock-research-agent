@@ -38,10 +38,12 @@ import tools.jackson.databind.json.JsonMapper;
 class ChatLoggingTest {
 
   private static final FakeMcpServer FAKE_MARKET_DATA_MCP = FakeMcpServer.start("getQuote");
+  private static final FakeMcpServer FAKE_FILINGS_MCP = FakeMcpServer.start("listFilings");
 
   @DynamicPropertySource
   static void pointAgentAtFakeMcpServer(DynamicPropertyRegistry propertyRegistry) {
     propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
+    propertyRegistry.add("stock-agent.mcp-servers.filings.url", FAKE_FILINGS_MCP::url);
   }
 
   private static final String FAILING_PROMPT = "please fail";

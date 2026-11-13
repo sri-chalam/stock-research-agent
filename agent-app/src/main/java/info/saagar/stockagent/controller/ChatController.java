@@ -63,13 +63,32 @@ public class ChatController {
   public ChatResponse chat(@Valid @RequestBody ChatRequest chatRequest) {
     long startNanos = System.nanoTime();
     Result<String> agentResult = marketDataAgent.answer(chatRequest.message());
+    return toChatResponse(
+        jsonMapper,
+        MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
+        MarketDataAgent.PROMPT_ID,
+        agentResult,
+        startNanos);
+  }
+
+  /// Builds the response from an agent's result and logs its `answerProvenance` line.
+  ///
+  /// Shared with [FilingsChatController] so both endpoints log the same event.
+  static ChatResponse toChatResponse(
+      JsonMapper jsonMapper,
+      String agentName,
+      String promptId,
+      Result<String> agentResult,
+      long startNanos) {
     List<ToolCall> toolsCalled =
-        agentResult.toolExecutions().stream().map(this::toToolCall).toList();
-    logAnswerProvenance(agentResult, toolsCalled, startNanos);
+        agentResult.toolExecutions().stream()
+            .map(toolExecution -> toToolCall(jsonMapper, toolExecution))
+            .toList();
+    logAnswerProvenance(agentName, promptId, agentResult, toolsCalled, startNanos);
     return new ChatResponse(agentResult.content(), toolsCalled);
   }
 
-  private ToolCall toToolCall(ToolExecution toolExecution) {
+  private static ToolCall toToolCall(JsonMapper jsonMapper, ToolExecution toolExecution) {
     return new ToolCall(
         toolExecution.request().name(),
         ToolArguments.parse(jsonMapper, toolExecution.request().arguments()));
@@ -77,11 +96,15 @@ public class ChatController {
 
   /// Logs the one `answerProvenance` line that says which agent, prompt and tools made the answer.
   private static void logAnswerProvenance(
-      Result<String> agentResult, List<ToolCall> toolsCalled, long startNanos) {
+      String agentName,
+      String promptId,
+      Result<String> agentResult,
+      List<ToolCall> toolsCalled,
+      long startNanos) {
     TokenUsage tokenUsage = agentResult.tokenUsage();
     Map<String, Object> provenanceData = new LinkedHashMap<>();
-    provenanceData.put("agentName", MarketDataAgentConfig.MARKET_DATA_AGENT_NAME);
-    provenanceData.put("promptId", MarketDataAgent.PROMPT_ID);
+    provenanceData.put("agentName", agentName);
+    provenanceData.put("promptId", promptId);
     provenanceData.put("toolsUsed", toolsCalled.stream().map(ToolCall::name).toList());
     provenanceData.put("inputTokenCount", tokenUsage == null ? null : tokenUsage.inputTokenCount());
     provenanceData.put(

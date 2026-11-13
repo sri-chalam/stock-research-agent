@@ -49,6 +49,7 @@ Multi-module Gradle build. Shared build logic lives in `buildSrc` convention plu
 |---|---|
 | `agent-app` | The agent app (REST API, agents, MCP clients). Port 8080 |
 | `market-data-mcp` | Market-data MCP server (Finnhub). Port 8081 |
+| `filings-mcp` | SEC filings MCP server (EDGAR). Port 8082. Same package layout as `market-data-mcp`, under `info.saagar.stockagent.filings` |
 | `common` | Code shared by more than one module. A plain library, not an app |
 
 Each app's `application.yml` holds only its own settings and imports `classpath:common.yml` (from `common`) for shared settings: structured logging and virtual threads. Do not put one app's settings in another app's file or in `common.yml`.
@@ -95,6 +96,7 @@ Under `info.saagar.stockagent.common`, organised by package:
 ./gradlew clean build  # full clean build
 ./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
 ./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
+./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
 ```
 
 ## 5. Code Style
