@@ -10,15 +10,15 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 
 This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
 
-> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 1a. Some goals may change or be dropped.
+> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 1b. Some goals may change or be dropped.
 
 Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
 
 | # | Area | What to explore | Status |
 |---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent only |
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent and Filings analyst, each standalone |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`) |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
 | 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
@@ -75,19 +75,19 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 |---|---|---|---|
 | `agent-app` | 8080 | `/api/chat`, `/api/filings/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
-| `filings-mcp` | 8082 | `/mcp` | Built (`listFilings`) |
+| `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
 | `macro-mcp` | 8083 | `/mcp` | Reserved (Iteration 1c) |
 | `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
 
 ## Run locally
 
-Two apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Market data agent (Claude Haiku 5.5). The agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
+Three apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Market data agent (Claude Haiku 5.5). The agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
 
 ```
 curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
-The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. Its `listFilings` tool returns the 10 most recent 10-K, 10-Q or 8-K filings for about 20 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
+The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has two tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, and `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years. Both support only about 20 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
 
 ```
 curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
@@ -134,14 +134,14 @@ Compose reads the keys from a git-ignored `.env` file in the project root. Each 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
-docker compose up --build -d    # build the images and start both apps in the background
-docker compose ps               # both services Up; market-data-mcp shows (healthy)
-docker compose logs -f          # follow both apps' logs (Ctrl+C stops following, not the apps)
+docker compose up --build -d    # build the images and start all three apps in the background
+docker compose ps               # all three services Up; both MCP servers show (healthy)
+docker compose logs -f          # follow all apps' logs (Ctrl+C stops following, not the apps)
 
-docker compose down             # stop and remove both containers and the network
+docker compose down             # stop and remove the containers and the network
 ```
 
-Leave out `-d` to run in the foreground; Ctrl+C then stops both apps. Inside Compose, `agent-app` reaches the MCP server at `http://market-data-mcp:8081/mcp`. The sample prompts and `curl` calls below work unchanged.
+Leave out `-d` to run in the foreground; Ctrl+C then stops all three apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp` and `http://filings-mcp:8082/mcp`. The sample prompts and `curl` calls below work unchanged.
 
 ### 3. Sample prompts
 
@@ -236,6 +236,14 @@ curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: applicatio
 # Unconfigured ticker: the error lists the supported tickers
 curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
   -d '{"message":"List IBM'\''s recent 10-Q filings"}'
+```
+
+**`getCompanyFacts`** (Filings analyst): revenue, net income, gross profit, diluted EPS, total assets and cash for the last 3 fiscal years, from XBRL. Each value cites its form, period and accession number.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What was Apple'\''s revenue for the last 3 fiscal years?"}'
+# {"answer":"...","toolsCalled":[{"name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
 ```
 
 ### 4. Call the MCP tools directly (optional)

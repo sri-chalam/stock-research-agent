@@ -4,7 +4,7 @@
 
 **Blocked by:** 02, 03 (spec and ADR edits can be done earlier)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions
 
@@ -28,9 +28,9 @@
 
 ## Acceptance criteria
 
-- [ ] Spec §7.1, MCP-2, FR-13, §8.11 and §14 row 1b match what was built.
-- [ ] ADR 0010 no longer mentions `mcp-common`; ADR 0008 lists `SEC_USER_AGENT`.
-- [ ] learning-notes.md has the SEC EDGAR section.
-- [ ] README and AGENTS.md list filings-mcp and how to run it.
+- [x] Spec §7.1, MCP-2, FR-13, §8.11 and §14 row 1b match what was built.
+- [x] ADR 0010 no longer mentions `mcp-common`; ADR 0008 lists `SEC_USER_AGENT`.
+- [x] learning-notes.md has the SEC EDGAR section.
+- [x] README and AGENTS.md list filings-mcp and how to run it.
 
 ## Comments

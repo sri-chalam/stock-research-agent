@@ -77,6 +77,17 @@ Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpAppli
 | `provider` | Finnhub client interface, implementation and result records (`FinnhubClient`, `RestClientFinnhubClient`, `Quote`, `MarketDataException`) |
 | `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`) |
 
+### `filings-mcp`
+
+Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication`, which also scans `info.saagar.stockagent.common`).
+
+| Package | Contents |
+|---|---|
+| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) |
+| `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`) |
+| `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`) |
+
 ### `common`
 
 Under `info.saagar.stockagent.common`, organised by package:

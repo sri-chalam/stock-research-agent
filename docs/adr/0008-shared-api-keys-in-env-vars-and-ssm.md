@@ -17,6 +17,8 @@ The code reads each key from an environment variable (for example `FINNHUB_API_K
 - **Local:** a git-ignored `.env` file used by Docker Compose, or exported env vars.
 - **AWS:** SSM Parameter Store SecureString (standard tier), stored once in the persistent stack so teardown does not delete it (DEP-2). The CDK task definition lists each parameter under the container's `secrets`, and ECS injects it as an environment variable at task start. The task execution role needs `ssm:GetParameters` on those parameters. The default AWS-managed key needs no extra KMS permission.
 
+`SEC_USER_AGENT` (used by `filings-mcp`) follows the same path. SEC EDGAR needs no key, but requires a `User-Agent` with a contact email. The value is not secret, but it is personal, so it stays out of Git: an env var locally and an SSM parameter in AWS.
+
 Secrets Manager is not used (DEP-5).
 
 ## Consequences

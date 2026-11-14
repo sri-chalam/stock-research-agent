@@ -35,7 +35,7 @@ Short points worth remembering: how things work and what tripped us up. Design d
 - The LangChain4j MCP client sends `ping` as its health check, and `McpServer` doesn't answer it, so the controller answers `ping` itself.
 - agent-app pins MCP protocol version `2025-11-25`. Without the pin, the client sends a `server/discover` probe, which our servers don't support.
 - When a tool throws, the library turns the exception into an `isError: true` result and doesn't log it. Log the failure where it happens (for example `finnhubCallFailed` in the Finnhub client).
-- agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` first.
+- agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` and `filings-mcp` first.
 - Finnhub's hosted MCP server supports only per-user OAuth for Claude and ChatGPT, so agent-app can't use it. It's still useful in Claude Desktop for exploration. See [ADR 0009](adr/0009-own-market-data-mcp-instead-of-finnhub-hosted-mcp.md).
 
 ### Runtime flow of a chat request
@@ -55,6 +55,12 @@ ChatController → agent.chat(prompt)                        (AiServices proxy)
 - Outside chat requests, the client sends `initialize` at agent-app startup and `ping` as a health check.
 - `McpController` routing: it answers `ping` itself, wraps `tools/call` in `handleToolCall` (logging), and passes everything else to `McpServer.handle`.
 - `McpServer.handle` switches on `method`: `initialize` → `handleInitialize`, `tools/list` → `handleListTools`, `tools/call` → `handleCallTool` (invokes the `@Tool` method), anything else → "Method not found" error. A message with no numeric `id` returns `null`, so the controller replies `202 Accepted`.
+
+## SEC EDGAR
+
+- EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.
+- SEC rejects a request with 403 unless its `User-Agent` names the app and gives a contact email. `filings-mcp` reads it from `SEC_USER_AGENT` and fails at startup without it.
+- XBRL tags vary by company. Revenue, for example, may be `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax` or `SalesRevenueNet`. `getCompanyFacts` hides this behind a small fallback list per metric (`HeadlineMetric`).
 
 ## Git
 

@@ -202,13 +202,13 @@ flowchart TD
 | MCP server | Tools (initial) | Upstream source | Auth to upstream |
 |---|---|---|---|
 | **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to, symbol?)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
-| **filings-mcp** | `listFilings(ticker, formType)`, `getFilingSection(ticker, accession, section)`, `getCompanyFacts(ticker, concept)` (XBRL), `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
+| **filings-mcp** | Iteration 1b: `listFilings(ticker, formType)` (`formType` required: `10-K`, `10-Q` or `8-K`), `getCompanyFacts(ticker)` (XBRL, fixed metrics). Iteration 2: `getFilingSection(ticker, accession, section)`, `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
 | **macro-mcp** | `getSeries(seriesId, range)` (e.g., CPI, fed funds, 10Y yield), `searchSeries(query)` | FRED | Free API key |
 | **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
 
 Requirements:
 - MCP-1: Upstream API keys never leave the MCP server; they are never passed to the agent or the LLM.
-- MCP-2: Tool results are trimmed to the fields the model needs (no raw JSON/HTML dumps). For `market-data-mcp`: news returns the 10 most recent articles (summary ≤ ~300 chars, range ≤ 30 days, default 7); market news accepts only `general` and `merger`; the earnings calendar without a symbol is capped at 7 days and 25 rows; basic financials return a fixed set of ~12 metrics with no time series.
+- MCP-2: Tool results are trimmed to the fields the model needs (no raw JSON/HTML dumps). For `market-data-mcp`: news returns the 10 most recent articles (summary ≤ ~300 chars, range ≤ 30 days, default 7); market news accepts only `general` and `merger`; the earnings calendar without a symbol is capped at 7 days and 25 rows; basic financials return a fixed set of ~12 metrics with no time series. For `filings-mcp`: `listFilings` returns the 10 most recent filings of one form type; `getCompanyFacts` returns a fixed set of ~6 metrics (revenue, net income, gross profit, diluted EPS, total assets, cash) for the last 3 fiscal years, with no raw XBRL.
 - MCP-3: MCP servers do not rate-limit or cache upstream calls. The project's goal is learning MCP, gateways and RAG, not upstream traffic management. When an upstream rejects a call (e.g., Finnhub HTTP 429), the tool returns a model-readable error (MCP-5).
 - MCP-4: No provider fallback; Finnhub is the only market-data source (ADR 0007).
 - MCP-5: Tool errors return clear, model-readable messages (e.g., "International symbols are not supported on the free tier").
@@ -250,7 +250,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - Implementation: built on LangChain4j embedding-store abstraction (pgvector); custom code is acceptable and preferred for explainability.
 
 ### 8.4 RAG over SEC filings
-- FR-13: Ingestion pipeline downloads 10-K/10-Q for a configured ticker list (initially 5–10 tickers), parses into sections (Risk Factors, MD&A, etc.), chunks (300–1000 tokens with overlap), embeds and stores with metadata (ticker, form, fiscal period, section, accession number, URL).
+- FR-13: Ingestion pipeline downloads 10-K/10-Q for a configured ticker list (initially 5–10 tickers, a subset of the `filings-mcp` ticker→CIK map), parses into sections (Risk Factors, MD&A, etc.), chunks (300–1000 tokens with overlap), embeds and stores with metadata (ticker, form, fiscal period, section, accession number, URL).
 - FR-14: Retrieval uses hybrid search (vector + keyword) with reranking; top-k 3–5.
 - FR-15: Answers cite filing, section and period; numbers prefer XBRL `companyfacts` over text extraction.
 - FR-16: Prompts must stay **under 100K tokens** (Haiku 5.5 pricing tier); never stuff whole filings into context.
@@ -297,6 +297,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 |---|---|---|
 | `POST` | `/api/chat` | Submit a prompt; returns a run ID |
 | `GET` | `/api/chat/{runId}/stream` | SSE stream: tokens, agent/tool trace events, final answer |
+| `POST` | `/api/filings/chat` | **Temporary** (Iteration 1b): chat with the Filings analyst directly. Removed in Iteration 3, when the Supervisor routes filings questions |
 | `GET` | `/api/portfolio` | Current holdings and watchlist |
 | `PUT` | `/api/watchlist` | Update watchlist |
 | `GET` | `/api/actions?status=PENDING` | Pending actions for the user |
@@ -447,7 +448,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 |---|---|---|---|
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
 | **1a** | `market-data-mcp` | Multi-module Gradle build (`agent-app`, `market-data-mcp`, `common`); Streamable HTTP (stateless, JSON responses) through a hand-written `POST /mcp` controller around the `langchain4j-community-mcp-server` `McpServer` (ADR 0010); six Finnhub tools; agent uses MCP client with a per-agent tool allowlist; the Quote agent is renamed the Market data agent and gets all six tools; correlation headers sent on MCP calls | `POST /api/chat` "price of Apple" returns a live Finnhub price through `market-data-mcp` `getQuote`; `agent-app` has no local tools and no Finnhub key reference; the other five tools answer `tools/call` with trimmed output and are reachable through `POST /api/chat`; one request's logs share a `correlationId` across both apps |
-| **1b** | `filings-mcp` | SEC EDGAR server; shared `mcp-common` module extracted from the two servers | Agent answers filings questions through `filings-mcp` tools only |
+| **1b** | `filings-mcp` | SEC EDGAR server with two tools (`listFilings`, `getCompanyFacts`); configured ticker→CIK map (about 20 companies); `McpController` copied, not shared (ADR 0010); Filings analyst behind `POST /api/filings/chat` (temporary until Iteration 3) | "List Microsoft's recent 10-K filings" returns rows with sec.gov links through `listFilings`; "Apple's revenue for the last 3 fiscal years" returns three values through `getCompanyFacts`, each citing form, period and accession number; an unconfigured ticker or missing `formType` gets a model-readable error that the agent relays; the Market data agent sees no filings tools and the Filings analyst sees no market-data tools; one request's logs share a `correlationId` across agent-app and filings-mcp, and `SEC_USER_AGENT` appears in no log line; `docker compose up` runs all three apps |
 | **1c** | `macro-mcp` | FRED server | Agent answers macro questions through `macro-mcp` tools only; upstream keys only in MCP servers |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |

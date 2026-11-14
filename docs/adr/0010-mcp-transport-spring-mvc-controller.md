@@ -31,7 +31,7 @@ The agent-app MCP client pins protocol version `2025-11-25` (`stock-agent.mcp-se
 ## Consequences
 
 - The transport is one small controller that is easy to read and test, with no second MCP library.
-- `filings-mcp` and `macro-mcp` need the same controller. Iteration 1b moves it into the shared `mcp-common` module.
+- `filings-mcp` and `macro-mcp` need the same controller. Each MCP server keeps its own copy. The duplication is accepted to keep the build simple (AGENTS.md §1, Project intent).
 - The controller is code we own. Delete it when the library ships an HTTP transport.
 - Servers cannot stream progress or send server-initiated messages. Stateless tools do not need either.
 
