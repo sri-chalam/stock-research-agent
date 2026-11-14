@@ -81,3 +81,33 @@ services:
         condition: service_healthy
       filings-mcp:
         condition: service_healthy
+
+  # Log search (ADR 0011): Alloy ships every container's stdout to Loki; Grafana queries Loki.
+  # Loki has no volume, so `docker compose down` wipes the logs.
+  loki:
+    image: grafana/loki:3.7.10
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    environment:
+      # Alloy collects only this project's containers.
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Local only: anonymous Admin, no login form. The port is bound to 127.0.0.1.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki

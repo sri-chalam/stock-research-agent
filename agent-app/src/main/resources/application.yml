@@ -1,6 +1,6 @@
 spring:
   application:
-    name: stock-research-agent
+    name: agent-app
   config:
     import: classpath:common.yml
 

@@ -77,6 +77,7 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
 | `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
+| Grafana (Compose only) | 3000 | `/explore` | Built (Iteration 2a) |
 
 ## Run locally
 
@@ -138,14 +139,32 @@ Compose reads the keys from a git-ignored `.env` file in the project root. Each 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
-docker compose up --build -d    # build the images and start all three apps in the background
-docker compose ps               # all three services Up; both MCP servers show (healthy)
+docker compose up --build -d    # build the images; start the three apps, Postgres and log search
+docker compose ps               # all services Up; both MCP servers show (healthy)
 docker compose logs -f          # follow all apps' logs (Ctrl+C stops following, not the apps)
 
 docker compose down             # stop and remove the containers and the network
 ```
 
 Leave out `-d` to run in the foreground; Ctrl+C then stops all three apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp` and `http://filings-mcp:8082/mcp`. The sample prompts and `curl` calls below work unchanged.
+
+#### Log search (Iteration 2a)
+
+Compose also starts Loki, Grafana Alloy and Grafana (ADR 0011). Alloy reads every container's stdout through the Docker socket and sends it to Loki. Open Grafana at <http://127.0.0.1:3000/explore>. No login is needed, and Loki is the default data source.
+
+Loki has two labels: `service` (the compose service name, for example `filings-mcp` or `postgres`) and `level` (`INFO`, `WARN`, ...; only on the apps' JSON lines). Query other JSON fields, such as `correlationId` and `eventName`, with `| json`. Loki keeps only lines written after Alloy started, and has no volume: `docker compose down` deletes the logs.
+
+```logql
+# One service, one level, lines containing a text
+{service="filings-mcp"} | json | level="INFO" |= "MCP tool call completed"
+
+# One request across agent-app and the MCP servers. Send your own ID with the request:
+#   curl ... -H 'X-Correlation-Id: my-check-1' ...
+{service=~".+"} | json | correlationId="my-check-1"
+
+# Postgres plain-text logs
+{service="postgres"} |= "ERROR"
+```
 
 ### 3. Sample prompts
 
