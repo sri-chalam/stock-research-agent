@@ -39,7 +39,7 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 | Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache, session state) |
 | Logging | SLF4J 2 + Logback |
 | Testing | JUnit Jupiter + AssertJ; versions managed by the Spring Boot BOM where available |
-| Container | Amazon Corretto 25 Alpine (`filings-mcp`: Corretto 25 on Amazon Linux 2023, because ONNX Runtime needs glibc) |
+| Container | `alpine:latest` with a jlink runtime built from Amazon Corretto 25 Alpine (ADR 0012; `filings-mcp`: Corretto 25 on Amazon Linux 2023, because ONNX Runtime needs glibc) |
 
 ## 3. Project Structure
 

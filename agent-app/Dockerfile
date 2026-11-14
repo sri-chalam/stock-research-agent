@@ -17,7 +17,21 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :agent-app:build -x test --no-daemon --console=plain \
     && cp agent-app/build/libs/agent-app-*[!n].jar /workspace/app.jar
 
-FROM amazoncorretto:25-alpine
+# A minimal Java runtime from the JDK's jmods, musl-linked like the final image (ADR 0012).
+# The module list includes JMX, JFR, jcmd and the attach API for metrics, the OpenTelemetry agent
+# and debugging; ADR 0012 gives the reason for each module. It is the same list in both images.
+FROM amazoncorretto:25-alpine AS jre
+# On Linux, --strip-debug also strips native debug symbols, which needs objcopy (binutils).
+RUN apk add --no-cache binutils && jlink \
+    --add-modules java.base,java.desktop,java.instrument,java.logging,java.management,java.naming,java.net.http,java.security.jgss,java.security.sasl,java.sql,java.xml,jdk.attach,jdk.jcmd,jdk.jfr,jdk.management,jdk.management.jfr,jdk.unsupported,jdk.zipfs \
+    --strip-debug --no-man-pages --no-header-files --compress=zip-6 \
+    --output /opt/java
+
+# Unpinned on purpose to pick up Alpine security fixes; build with `--pull` (ADR 0012).
+FROM alpine:latest
+ENV JAVA_HOME=/opt/java
+ENV PATH="$JAVA_HOME/bin:$PATH"
+COPY --from=jre /opt/java /opt/java
 RUN addgroup -S app && adduser -S app -G app
 USER app
 WORKDIR /app

@@ -1,4 +1,4 @@
-# Local stack: `docker compose up --build`. Keys come from the git-ignored .env (copy .env.example).
+# Local stack: `docker compose build --pull && docker compose up` (`--pull`: ADR 0012). Keys come from the git-ignored .env (copy .env.example).
 # Neither app has auth before Iteration 5, so host ports are bound to 127.0.0.1 only. Inside the
 # containers the apps listen on 0.0.0.0 so Compose networking and the port bindings can reach them.
 services:
