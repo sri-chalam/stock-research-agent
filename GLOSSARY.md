@@ -4,12 +4,9 @@
 
 **Holdings**: The stocks a user holds in their paper portfolio, as a ticker and the number of shares held (e.g., 50 shares of AAPL). Stored in Postgres and read through `getHoldings()` on `portfolio-mcp`. Holdings drive sector exposure and the Portfolio risk agent. Not the same as the watchlist, which follows tickers without owning them.
 
-**Macro data**: Economy-wide indicators rather than company-specific figures, such as CPI (consumer price index, a measure of inflation), the federal funds rate and the 10Y yield (10-year US Treasury yield). It comes from FRED through `macro-mcp` and is used mainly by the Portfolio risk agent for what-if scenarios, such as "what happens if rates rise 1%?".
-
-**MCP server**: A Java service that exposes tools to agents over MCP; agents never call data providers directly. There are four, one per domain:
+**MCP server**: A Java service that exposes tools to agents over MCP; agents never call data providers directly. There are three, one per domain:
 - `market-data-mcp`: quotes, news, profiles, earnings, financials (Finnhub).
 - `filings-mcp`: SEC filings, XBRL facts, filings search (SEC EDGAR).
-- `macro-mcp`: macro data series (FRED).
 - `portfolio-mcp`: holdings, watchlist, sector exposure, paper-trade proposals (application Postgres).
 
 **Paper portfolio**: A user's simulated portfolio: their holdings, changed only by approved paper trades. Each user has their own, stored in Postgres. `portfolio-mcp` enforces ownership in code, so a user can read and modify only their own, and portfolio answers are never shared across users.

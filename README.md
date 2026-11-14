@@ -18,7 +18,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 |---|---|---|---|
 | 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent and Filings analyst, each standalone |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub), SEC filings (EDGAR) and macro data (FRED). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
 | 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
@@ -76,7 +76,6 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `agent-app` | 8080 | `/api/chat`, `/api/filings/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
-| `macro-mcp` | 8083 | `/mcp` | Reserved (Iteration 1c) |
 | `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
 
 ## Run locally

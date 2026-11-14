@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The application needs upstream API keys (Finnhub, FRED) and an Anthropic key. The spec first said each user supplies their own data-provider keys. Per-user keys would need encrypted key storage, passing the key from user to agent to MCP server, and per-user rate limits. None of that helps the learning goals.
+The application needs an upstream API key (Finnhub) and an Anthropic key. The spec first said each user supplies their own data-provider keys. Per-user keys would need encrypted key storage, passing the key from user to agent to MCP server, and per-user rate limits. None of that helps the learning goals.
 
 ## Decision
 

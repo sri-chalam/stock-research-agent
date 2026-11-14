@@ -53,7 +53,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 ### In scope
 - US equities only (matches the Finnhub free tier).
 - Paper portfolio and watchlist per user.
-- Research answers grounded in market data, news, SEC filings and macro data.
+- Research answers grounded in market data, news and SEC filings.
 - Personal, non-commercial use; the person deploying the app supplies the data-provider API keys, shared by all users.
 
 ### Non-goals
@@ -126,12 +126,10 @@ flowchart TB
     BF --> CLAUDE[Anthropic API<br/>Haiku 5.5 / Sonnet 5.5]
     BF --> MD[market-data-mcp]
     BF --> FL[filings-mcp]
-    BF --> MC[macro-mcp]
     BF --> PF[portfolio-mcp]
 
     MD --> FH[Finnhub API]
     FL --> SEC[SEC EDGAR]
-    MC --> FRED[FRED API]
     PF --> PG[(PostgreSQL)]
 
     APP <--> PGV[(Postgres + pgvector)]
@@ -171,7 +169,7 @@ flowchart TD
 | 2 | **Filings analyst** | Answer from 10-K/10-Q/8-K via RAG, with section citations | filings-mcp, pgvector | Haiku 5.5 (Sonnet candidate) | Iteration 3 |
 | 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
 | 4 | **News & sentiment agent** | Summarize company/market news; treats articles as **untrusted input** | market-data-mcp (news) | Haiku 5.5 | Iteration 3b |
-| 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp, macro-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
+| 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
 | 6 | **Critic** | Verify every number and claim in the draft answer against tool outputs before returning | Tool outputs of the run | Haiku 5.5 | Iteration 3d |
 
 **Build sequence:** start with 3 agents (Supervisor, Filings, Market data), then add News, Risk and Critic one at a time, measuring cost and latency after each addition.
@@ -203,7 +201,6 @@ flowchart TD
 |---|---|---|---|
 | **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to, symbol?)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
 | **filings-mcp** | Iteration 1b: `listFilings(ticker, formType)` (`formType` required: `10-K`, `10-Q` or `8-K`), `getCompanyFacts(ticker)` (XBRL, fixed metrics). Iteration 2: `getFilingSection(ticker, accession, section)`, `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
-| **macro-mcp** | `getSeries(seriesId, range)` (e.g., CPI, fed funds, 10Y yield), `searchSeries(query)` | FRED | Free API key |
 | **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
 
 Requirements:
@@ -221,7 +218,6 @@ Requirements:
 |---|---|---|---|---|
 | **Finnhub** | Real-time US quotes, news, profiles, earnings calendar | Free key | US equities only, ~60 req/min; candles and international are paid | Free tier is **personal use only**; no redistribution |
 | **SEC EDGAR** | 10-K, 10-Q, 8-K, XBRL company facts | None | ≤10 req/sec | User-Agent with contact details |
-| **FRED** | Macro series | Free key | Generous | FRED terms of use |
 
 Test fixtures use **synthetic data**, not recorded licensed data.
 
@@ -268,7 +264,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-25: Changes to alert rules follow the same pattern.
 
 ### 8.7 Morning brief (async / scheduled)
-- FR-26: A scheduled job (weekdays, before market open, user's time zone) generates a brief per user: holdings' overnight news, notable price moves, upcoming earnings, new filings, key macro releases.
+- FR-26: A scheduled job (weekdays, before market open, user's time zone) generates a brief per user: holdings' overnight news, notable price moves, upcoming earnings, new filings.
 - FR-27: The job authenticates with a **WorkOS M2M (client credentials)** token.
 - FR-28: The brief uses the **Anthropic Batch API** where possible (non-interactive, lower cost).
 - FR-29: Each brief step is idempotent and resumable; a failed run can be retried without duplicating output.
@@ -317,7 +313,7 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - SEC-5: Tokens, API keys and secrets are **never** placed in the LLM context or logs.
 - SEC-6: `portfolio-mcp` enforces ownership: a user can only read and modify their own portfolio, regardless of what the model requests.
 - SEC-7: The morning-brief job uses a WorkOS **M2M** application (client credentials) with the minimal scopes needed.
-- SEC-8: Scopes (initial): `agent.chat`, `portfolio.read`, `portfolio.write`, `marketdata.read`, `filings.read`, `macro.read`. What each scope grants and where it is enforced: see [design.md, Security → OAuth scopes](../design.md#oauth-scopes).
+- SEC-8: Scopes (initial): `agent.chat`, `portfolio.read`, `portfolio.write`, `marketdata.read`, `filings.read`. What each scope grants and where it is enforced: see [design.md, Security → OAuth scopes](../design.md#oauth-scopes).
 
 ### 9.2 Token flow
 
@@ -449,7 +445,6 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **0** | Skeleton | Spring Boot 4.1.1 + LangChain4j; one AI service with one local `@Tool` (`getQuote`); config per agent; Docker Compose | `POST /api/chat` answers "price of Apple" using the tool; tests with a mocked model pass; LangChain4j/Boot 4 compatibility confirmed and versions pinned |
 | **1a** | `market-data-mcp` | Multi-module Gradle build (`agent-app`, `market-data-mcp`, `common`); Streamable HTTP (stateless, JSON responses) through a hand-written `POST /mcp` controller around the `langchain4j-community-mcp-server` `McpServer` (ADR 0010); six Finnhub tools; agent uses MCP client with a per-agent tool allowlist; the Quote agent is renamed the Market data agent and gets all six tools; correlation headers sent on MCP calls | `POST /api/chat` "price of Apple" returns a live Finnhub price through `market-data-mcp` `getQuote`; `agent-app` has no local tools and no Finnhub key reference; the other five tools answer `tools/call` with trimmed output and are reachable through `POST /api/chat`; one request's logs share a `correlationId` across both apps |
 | **1b** | `filings-mcp` | SEC EDGAR server with two tools (`listFilings`, `getCompanyFacts`); configured ticker→CIK map (about 20 companies); `McpController` copied, not shared (ADR 0010); Filings analyst behind `POST /api/filings/chat` (temporary until Iteration 3) | "List Microsoft's recent 10-K filings" returns rows with sec.gov links through `listFilings`; "Apple's revenue for the last 3 fiscal years" returns three values through `getCompanyFacts`, each citing form, period and accession number; an unconfigured ticker or missing `formType` gets a model-readable error that the agent relays; the Market data agent sees no filings tools and the Filings analyst sees no market-data tools; one request's logs share a `correlationId` across agent-app and filings-mcp, and `SEC_USER_AGENT` appears in no log line; `docker compose up` runs all three apps |
-| **1c** | `macro-mcp` | FRED server | Agent answers macro questions through `macro-mcp` tools only; upstream keys only in MCP servers |
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
