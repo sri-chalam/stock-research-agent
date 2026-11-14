@@ -72,7 +72,7 @@ public class FilingsTools {
       "List a US company's 10 most recent SEC filings of one form type, newest first. Each has the"
           + " form, filingDate, reportPeriod (end of the period covered), accessionNumber and a"
           + " sec.gov url. formType is required: 10-K (annual), 10-Q (quarterly) or 8-K (current"
-          + " report). Only a fixed set of about 20 large US companies is supported; another"
+          + " report). Only a fixed set of 10 large US companies is supported; another"
           + " ticker returns an error listing the supported ones.")
   public List<FilingSummary> listFilings(
       @P("Ticker symbol, e.g. MSFT") String ticker,
@@ -104,7 +104,7 @@ public class FilingsTools {
           + " epsDiluted (diluted earnings per share), totalAssets and cashAndEquivalents. Each"
           + " value has the metric, fiscalPeriodEnd, value, unit (USD or USD/shares), form,"
           + " filedDate and accessionNumber of the 10-K that reported it. A metric the company"
-          + " does not report is left out. Only a fixed set of about 20 large US companies is"
+          + " does not report is left out. Only a fixed set of 10 large US companies is"
           + " supported; another ticker returns an error listing the supported ones.")
   public CompanyFacts getCompanyFacts(@P("Ticker symbol, e.g. AAPL") String ticker) {
     String cik = cikFor(ticker);

@@ -33,16 +33,6 @@ filings:
     META: "0001326801"
     TSLA: "0001318605"
     JPM: "0000019617"
-    V: "0001403161"
-    MA: "0001141391"
-    JNJ: "0000200406"
-    UNH: "0000731766"
-    WMT: "0000104169"
-    COST: "0000909832"
-    HD: "0000354950"
-    PG: "0000080424"
-    KO: "0000021344"
-    PEP: "0000077476"
     # company_tickers.json maps XOM to its new holding company (0002115436), which has filed no
     # 10-K yet. Exxon Mobil Corp's 10-Ks and 10-Qs are under this CIK.
     XOM: "0000034088"

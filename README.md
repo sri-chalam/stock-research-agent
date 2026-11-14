@@ -86,7 +86,7 @@ Three apps run side by side. `agent-app` receives the chat request (`POST /api/c
 curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
-The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has two tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, and `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years. Both support only about 20 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
+The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has two tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, and `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years. Both support only 10 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
 
 ```
 curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
