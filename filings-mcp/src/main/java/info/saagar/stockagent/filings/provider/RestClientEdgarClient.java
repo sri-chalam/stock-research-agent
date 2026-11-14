@@ -1,9 +1,12 @@
 package info.saagar.stockagent.filings.provider;
 
+import com.fasterxml.jackson.annotation.JsonProperty;
+import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.event.Level;
@@ -24,6 +27,7 @@ public class RestClientEdgarClient implements EdgarClient {
   private static final Logger log = LoggerFactory.getLogger(RestClientEdgarClient.class);
 
   private static final String SUBMISSIONS_ENDPOINT = "/submissions/CIK{cik}.json";
+  private static final String COMPANY_FACTS_ENDPOINT = "/api/xbrl/companyfacts/CIK{cik}.json";
 
   static final String REJECTED_USER_AGENT_MESSAGE =
       "SEC EDGAR rejected the request (check SEC_USER_AGENT).";
@@ -48,39 +52,61 @@ public class RestClientEdgarClient implements EdgarClient {
   @Override
   public List<EdgarFiling> fetchRecentFilings(String cik) {
     long startNanos = System.nanoTime();
-    EdgarSubmissionsResponse submissionsResponse;
+    EdgarSubmissionsResponse submissionsResponse =
+        get(SUBMISSIONS_ENDPOINT, cik, EdgarSubmissionsResponse.class, startNanos);
+    List<EdgarFiling> recentFilings = recentFilings(submissionsResponse);
+    logCallCompleted(SUBMISSIONS_ENDPOINT, cik, recentFilings.size(), startNanos);
+    return recentFilings;
+  }
+
+  /// {@inheritDoc}
+  @Override
+  public List<XbrlFact> fetchCompanyFacts(String cik, Set<String> conceptNames) {
+    long startNanos = System.nanoTime();
+    EdgarCompanyFactsResponse companyFactsResponse =
+        get(COMPANY_FACTS_ENDPOINT, cik, EdgarCompanyFactsResponse.class, startNanos);
+    List<XbrlFact> companyFacts = usGaapFacts(companyFactsResponse, conceptNames);
+    logCallCompleted(COMPANY_FACTS_ENDPOINT, cik, companyFacts.size(), startNanos);
+    return companyFacts;
+  }
+
+  /// Sends the GET and maps every failure to a logged [FilingsException].
+  private <T> T get(String endpoint, String cik, Class<T> responseType, long startNanos) {
     try {
-      submissionsResponse =
-          edgarRestClient
-              .get()
-              .uri(SUBMISSIONS_ENDPOINT, cik)
-              .header(HttpHeaders.USER_AGENT, secUserAgent)
-              .retrieve()
-              .body(EdgarSubmissionsResponse.class);
+      return edgarRestClient
+          .get()
+          .uri(endpoint, cik)
+          .header(HttpHeaders.USER_AGENT, secUserAgent)
+          .retrieve()
+          .body(responseType);
     } catch (RestClientResponseException statusException) {
       int httpStatus = statusException.getStatusCode().value();
-      throw callFailed(cik, httpStatus, messageForStatus(httpStatus), statusException, startNanos);
+      throw callFailed(
+          endpoint, cik, httpStatus, messageForStatus(httpStatus), statusException, startNanos);
     } catch (ResourceAccessException ioException) {
-      throw callFailed(cik, null, TIMED_OUT_MESSAGE, ioException, startNanos);
+      throw callFailed(endpoint, cik, null, TIMED_OUT_MESSAGE, ioException, startNanos);
     } catch (RestClientException unreadableResponseException) {
-      throw callFailed(cik, null, UNAVAILABLE_MESSAGE, unreadableResponseException, startNanos);
+      throw callFailed(
+          endpoint, cik, null, UNAVAILABLE_MESSAGE, unreadableResponseException, startNanos);
     }
-    List<EdgarFiling> recentFilings = recentFilings(submissionsResponse);
+  }
+
+  private static void logCallCompleted(
+      String endpoint, String cik, int resultRowCount, long startNanos) {
     log.atInfo()
         .addKeyValue("eventName", "edgarCallCompleted")
         .addKeyValue(
             "eventData",
             Map.of(
                 "edgarEndpoint",
-                SUBMISSIONS_ENDPOINT,
+                endpoint,
                 "cik",
                 cik,
-                "recentFilingCount",
-                recentFilings.size(),
+                "resultRowCount",
+                resultRowCount,
                 "durationTimeMs",
                 elapsedMillis(startNanos)))
         .log("SEC EDGAR call completed");
-    return recentFilings;
   }
 
   /// Zips the parallel arrays of `filings.recent` into rows.
@@ -106,6 +132,43 @@ public class RestClientEdgarClient implements EdgarClient {
     return recentFilings;
   }
 
+  /// Flattens the requested `facts.us-gaap` concepts into one row per fact and unit.
+  private static List<XbrlFact> usGaapFacts(
+      EdgarCompanyFactsResponse companyFactsResponse, Set<String> conceptNames) {
+    if (companyFactsResponse == null
+        || companyFactsResponse.facts() == null
+        || companyFactsResponse.facts().usGaap() == null) {
+      return List.of();
+    }
+    Map<String, EdgarConcept> conceptsByName = companyFactsResponse.facts().usGaap();
+    List<XbrlFact> companyFacts = new ArrayList<>();
+    for (String conceptName : conceptNames) {
+      EdgarConcept concept = conceptsByName.get(conceptName);
+      if (concept == null || concept.units() == null) {
+        continue;
+      }
+      concept
+          .units()
+          .forEach(
+              (unit, factRows) -> {
+                for (EdgarFactRow factRow : factRows) {
+                  companyFacts.add(
+                      new XbrlFact(
+                          conceptName,
+                          unit,
+                          factRow.start(),
+                          factRow.end(),
+                          factRow.val(),
+                          factRow.form(),
+                          factRow.fp(),
+                          factRow.filed(),
+                          factRow.accn()));
+                }
+              });
+    }
+    return companyFacts;
+  }
+
   private static String messageForStatus(int httpStatus) {
     if (httpStatus == 403) {
       return REJECTED_USER_AGENT_MESSAGE;
@@ -120,6 +183,7 @@ public class RestClientEdgarClient implements EdgarClient {
   ///
   /// The cause is not attached: Spring's exception messages carry the URL or the upstream body.
   private static FilingsException callFailed(
+      String endpoint,
       String cik,
       Integer httpStatus,
       String modelReadableMessage,
@@ -128,7 +192,7 @@ public class RestClientEdgarClient implements EdgarClient {
     boolean clientSideRejection = httpStatus != null && httpStatus < 500;
     Map<String, Object> failureData = new LinkedHashMap<>();
     failureData.put("httpStatus", httpStatus);
-    failureData.put("edgarEndpoint", SUBMISSIONS_ENDPOINT);
+    failureData.put("edgarEndpoint", endpoint);
     failureData.put("cik", cik);
     failureData.put("exceptionType", cause.getClass().getName());
     failureData.put("durationTimeMs", elapsedMillis(startNanos));
@@ -156,4 +220,23 @@ public class RestClientEdgarClient implements EdgarClient {
       List<String> reportDate,
       List<String> accessionNumber,
       List<String> primaryDocument) {}
+
+  /// The part of EDGAR's companyfacts response that is read.
+  private record EdgarCompanyFactsResponse(EdgarFactsByTaxonomy facts) {}
+
+  /// `facts`: concepts by name, per taxonomy; only `us-gaap` is read.
+  private record EdgarFactsByTaxonomy(@JsonProperty("us-gaap") Map<String, EdgarConcept> usGaap) {}
+
+  /// One concept: its facts by unit, e.g. `USD`.
+  private record EdgarConcept(Map<String, List<EdgarFactRow>> units) {}
+
+  /// One fact row; `start` is absent for point-in-time values.
+  private record EdgarFactRow(
+      String start,
+      String end,
+      BigDecimal val,
+      String accn,
+      String fp,
+      String form,
+      String filed) {}
 }

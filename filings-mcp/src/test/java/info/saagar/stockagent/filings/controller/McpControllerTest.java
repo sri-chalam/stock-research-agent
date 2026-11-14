@@ -60,16 +60,29 @@ class McpControllerTest {
     return jsonMapper.readTree(mvcResult.getResponse().getContentAsString());
   }
 
+  private static List<String> requiredParameters(JsonNode tools, String toolName) {
+    return tools
+        .valueStream()
+        .filter(tool -> toolName.equals(tool.path("name").asString()))
+        .findFirst()
+        .orElseThrow()
+        .path("inputSchema")
+        .path("required")
+        .valueStream()
+        .map(JsonNode::asString)
+        .toList();
+  }
+
   @Test
-  void toolsListListsListFilingsWithBothParametersRequired() throws Exception {
+  void toolsListListsBothToolsWithTheirRequiredParameters() throws Exception {
     JsonNode reply = postForReply("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
 
-    JsonNode listFilingsTool = reply.path("result").path("tools").get(0);
-    assertThat(reply.path("result").path("tools").size()).isEqualTo(1);
-    assertThat(listFilingsTool.path("name").asString()).isEqualTo("listFilings");
-    assertThat(listFilingsTool.path("inputSchema").path("required").valueStream())
-        .map(JsonNode::asString)
+    JsonNode tools = reply.path("result").path("tools");
+    assertThat(tools.valueStream().map(tool -> tool.path("name").asString()))
+        .containsExactlyInAnyOrder("listFilings", "getCompanyFacts");
+    assertThat(requiredParameters(tools, "listFilings"))
         .containsExactlyInAnyOrder("ticker", "formType");
+    assertThat(requiredParameters(tools, "getCompanyFacts")).containsExactly("ticker");
   }
 
   @Test

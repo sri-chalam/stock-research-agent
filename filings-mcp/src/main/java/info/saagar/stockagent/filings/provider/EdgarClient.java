@@ -1,6 +1,7 @@
 package info.saagar.stockagent.filings.provider;
 
 import java.util.List;
+import java.util.Set;
 
 /// Calls to the SEC EDGAR APIs.
 ///
@@ -14,4 +15,13 @@ public interface EdgarClient {
   /// @return the filings in EDGAR's order, newest first; empty when EDGAR lists none
   /// @throws FilingsException when the call fails; the message is safe to show to the model
   List<EdgarFiling> fetchRecentFilings(String cik);
+
+  /// Fetches a company's US-GAAP facts from `/api/xbrl/companyfacts/CIK{cik}.json`, keeping only
+  /// the named concepts.
+  ///
+  /// @param cik 10-digit, zero-padded CIK, e.g. `0000789019`
+  /// @param conceptNames US-GAAP tags to keep, e.g. `NetIncomeLoss`
+  /// @return the facts of those concepts in every unit; empty when the company reports none
+  /// @throws FilingsException when the call fails; the message is safe to show to the model
+  List<XbrlFact> fetchCompanyFacts(String cik, Set<String> conceptNames);
 }

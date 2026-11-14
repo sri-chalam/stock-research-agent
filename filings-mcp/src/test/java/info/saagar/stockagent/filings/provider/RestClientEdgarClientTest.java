@@ -9,7 +9,10 @@ import static org.springframework.test.web.client.response.MockRestResponseCreat
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
 
+import java.math.BigDecimal;
 import java.net.SocketTimeoutException;
+import java.util.List;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
@@ -56,6 +59,62 @@ class RestClientEdgarClientTest {
             new EdgarFiling(
                 "10-K", "2026-07-30", "2026-06-30", "0000950170-26-000002", "syn-20260630.htm"),
             new EdgarFiling("8-K", "2026-04-25", null, "0000950170-26-000001", "syn-8k.htm"));
+    edgarServer.verify();
+  }
+
+  @Test
+  void mapsOnlyTheRequestedUsGaapConceptsOfCompanyFacts() {
+    edgarServer
+        .expect(requestTo(EDGAR_BASE_URL + "/api/xbrl/companyfacts/CIK0000789019.json"))
+        .andExpect(method(HttpMethod.GET))
+        .andExpect(header("User-Agent", SEC_USER_AGENT))
+        .andRespond(
+            withSuccess(
+                """
+                {"cik":789019,"entityName":"SYNTHETIC CORP","facts":{\
+                "dei":{"EntityCommonStockSharesOutstanding":{"label":"Shares","units":{"shares":[\
+                {"end":"2026-07-15","val":7,"accn":"0000950170-26-000002","fy":2026,"fp":"FY",\
+                "form":"10-K","filed":"2026-07-30"}]}}},\
+                "us-gaap":{\
+                "NetIncomeLoss":{"label":"Net income","description":"...","units":{"USD":[\
+                {"start":"2025-07-01","end":"2026-06-30","val":101832000000,\
+                "accn":"0000950170-26-000002","fy":2026,"fp":"FY","form":"10-K",\
+                "filed":"2026-07-30","frame":"CY2025"}]}},\
+                "EarningsPerShareDiluted":{"label":"EPS","units":{"USD/shares":[\
+                {"start":"2025-07-01","end":"2026-06-30","val":13.64,\
+                "accn":"0000950170-26-000002","fy":2026,"fp":"FY","form":"10-K",\
+                "filed":"2026-07-30"}]}},\
+                "Assets":{"label":"Assets","units":{"USD":[\
+                {"end":"2026-06-30","val":512163000000,"accn":"0000950170-26-000002",\
+                "fy":2026,"fp":"FY","form":"10-K","filed":"2026-07-30"}]}}}}}""",
+                MediaType.APPLICATION_JSON));
+
+    List<XbrlFact> companyFacts =
+        edgarClient.fetchCompanyFacts(
+            "0000789019", Set.of("NetIncomeLoss", "EarningsPerShareDiluted", "GrossProfit"));
+
+    assertThat(companyFacts)
+        .containsExactlyInAnyOrder(
+            new XbrlFact(
+                "NetIncomeLoss",
+                "USD",
+                "2025-07-01",
+                "2026-06-30",
+                new BigDecimal("101832000000"),
+                "10-K",
+                "FY",
+                "2026-07-30",
+                "0000950170-26-000002"),
+            new XbrlFact(
+                "EarningsPerShareDiluted",
+                "USD/shares",
+                "2025-07-01",
+                "2026-06-30",
+                new BigDecimal("13.64"),
+                "10-K",
+                "FY",
+                "2026-07-30",
+                "0000950170-26-000002"));
     edgarServer.verify();
   }
 
