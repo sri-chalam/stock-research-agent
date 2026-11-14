@@ -12,17 +12,19 @@ The AWS deployment (Iteration 2b, ADR 0005) runs on Fargate Spot and is destroye
 
 ## Decision
 
-- **Locally:** Loki, Grafana Alloy and Grafana run in Docker Compose under an optional `observability` profile.
-  - Alloy reads container stdout through the Docker socket. No app code or dependency changes.
-  - Loki labels are only `service` (compose service name) and `level`. `correlationId`, `traceId` and `eventName` stay JSON fields and are queried with `| json`, to keep label cardinality low.
-  - Loki stores on local disk with 72h retention. The Grafana data source is provisioned from a file.
-- **In AWS:** ECS tasks use the `awslogs` driver. Log groups have 1-day retention and `RemovalPolicy.DESTROY`. Logs are searched with CloudWatch Logs Insights.
+- **Locally:** Loki, Grafana Alloy and Grafana start with plain `docker compose up`, alongside the apps. Logs are needed in every session, so they are not behind a profile.
+  - Alloy reads every container's stdout through the Docker socket, including Postgres (whose plain-text logs are searchable by text only). No app code or dependency changes.
+  - Loki labels are only `service` and `level`. `service` is the compose service name; agent-app's `spring.application.name` is renamed from `stock-research-agent` to `agent-app` so each app has one name in Gradle, Compose, the JSON `service` field, Loki and CloudWatch. `level` is set for JSON logs only and kept as emitted (`INFO`, the logstash layout's casing). `correlationId`, `traceId` and `eventName` stay JSON fields and are queried with `| json`, to keep label cardinality low.
+  - Loki has no volume: `docker compose down` wipes logs, like the local Postgres. No retention setting is needed.
+  - Grafana allows anonymous Admin access with the login form off, bound to `127.0.0.1:3000` like the other services. The Loki data source is provisioned from a file.
+- **In AWS:** ECS tasks use the `awslogs` driver, one log group per service (`/stock-agent/<service>`), with 1-day retention and `RemovalPolicy.DESTROY`. Logs are searched with CloudWatch Logs Insights; a cross-service `correlationId` search selects all groups.
 
 ## Consequences
 
 - Two query languages: LogQL locally, Logs Insights in AWS. Both query the same JSON fields.
 - Nothing is added to the ephemeral AWS stack, so teardown (ADR 0005) and cost are unchanged.
-- Log groups are deleted with the stack; logs do not survive a teardown.
+- Logs do not survive `docker compose down` locally or a teardown in AWS.
+- If `StockAgentLogFormatter` later emits lowercase levels, the example queries change with it.
 - Iteration 9 (OpenTelemetry → Grafana) can add Tempo next to Loki locally and link logs to traces through `traceId`.
 
 ## Alternatives considered
