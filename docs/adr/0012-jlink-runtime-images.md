@@ -1,4 +1,4 @@
-# 0012. jlink runtime images for agent-app and market-data-mcp
+# 0012. jlink runtime images for all three apps
 
 ## Status
 
@@ -6,14 +6,15 @@ Accepted
 
 ## Context
 
-The agent-app and market-data-mcp images ran on `amazoncorretto:25-alpine`, a full JDK of about 400 MB per image. From Iteration 2b, each deploy pushes the images to ECR, and each Fargate Spot task start pulls them (ADR 0003, ADR 0005). Smaller images make both faster. The apps need only a Java runtime, not the compiler, `jshell` or the other JDK tools.
+The agent-app and market-data-mcp images ran on `amazoncorretto:25-alpine`, a full JDK of about 400 MB per image. The filings-mcp image ran on `amazoncorretto:25-al2023-headless`, about 640 MB: a 183 MB OS layer, a 301 MB JDK and a 154 MB jar. From Iteration 2b, each deploy pushes the images to ECR, and each Fargate Spot task start pulls them (ADR 0003, ADR 0005). Smaller images make both faster. The apps need only a Java runtime, not the compiler, `jshell` or the other JDK tools.
 
 ## Decision
 
-- **Build:** a `jre` stage on `amazoncorretto:25-alpine` runs `jlink` against the JDK's `jmods/` (Corretto 25.0.5 still ships them, so no linkable-runtime JDK is needed). The runtime it builds is musl-linked, like the final image. The stage installs `binutils` because, on Linux, `--strip-debug` also strips native debug symbols with `objcopy`. The stage is thrown away, so `binutils` does not reach the final image.
+- **Build:** a `jre` stage runs `jlink` against the JDK's `jmods/` (Corretto 25.0.5 still ships them, so no linkable-runtime JDK is needed). For agent-app and market-data-mcp the stage is `amazoncorretto:25-alpine`, so the runtime is musl-linked like their final image. For filings-mcp it is `amazoncorretto:25-al2023`, so the runtime is glibc-linked like its final image (see **glibc base** below). The stage installs `binutils` because, on Linux, `--strip-debug` also strips native debug symbols with `objcopy`. The stage is thrown away, so `binutils` does not reach the final image.
 - **Flags:** `--strip-debug --no-man-pages --no-header-files --compress=zip-6`.
-- **Final stage:** `alpine:latest` with the runtime in `/opt/java` and the existing non-root `app` user. The tag is deliberately unpinned so rebuilds pick up Alpine security fixes. Images are built with `docker compose build --pull`, so the build does not reuse a stale cached `alpine:latest`. Base Alpine already has `zlib`. The X11 and ALSA libraries that the Corretto image installs are needed only by `libawt_xawt`, which a headless JVM never loads.
-- **Modules:** one fixed list, written inline as `--add-modules` in both Dockerfiles. There is no shared file and no build arg. The list is the same in both images, so one review covers both:
+- **Final stage:** `alpine:latest` (agent-app, market-data-mcp) or `amazonlinux:2023` (filings-mcp), with the runtime in `/opt/java` and the existing non-root `app` user. Both tags are deliberately unpinned so rebuilds pick up OS security fixes. Images are built with `docker compose build --pull`, so the build does not reuse a stale cached base image. Base Alpine already has `zlib`. The X11 and ALSA libraries that the Corretto image installs are needed only by `libawt_xawt`, which a headless JVM never loads.
+- **glibc base for filings-mcp:** ONNX Runtime and the DJL tokenizer, behind its in-process embedding model, ship only glibc native libraries, which do not run on Alpine's musl. `amazonlinux:2023` is the same 183 MB OS layer as the Corretto image it replaces. It has `curl` (the compose healthcheck), `libstdc++`, `libgcc_s` and `zlib`, but no `useradd`, so the `app` user and `/home/app` (where DJL caches its native library) are added by hand. The entrypoint keeps `--enable-native-access=ALL-UNNAMED`, because ONNX Runtime loads its native library through `System.load`. A smaller glibc base (`amazonlinux:2023-minimal`, `debian:trixie-slim`) and removing the non-Linux native libraries from the ONNX Runtime and tokenizers jars are possible follow-ups.
+- **Modules:** one fixed list, written inline as `--add-modules` in all three Dockerfiles. There is no shared file and no build arg. The list is the same in every image, so one review covers all three. filings-mcp needed no additional module: ingestion, the three tools through `POST /api/filings/chat` and `jcmd` all ran with no `NoClassDefFoundError`, `ClassNotFoundException` or `UnsatisfiedLinkError` in its logs.
 
 | Module | Why |
 |---|---|
@@ -36,24 +37,27 @@ The agent-app and market-data-mcp images ran on `amazoncorretto:25-alpine`, a fu
 | `jdk.unsupported` | `sun.misc.Unsafe`, referenced by `spring-core` |
 | `jdk.zipfs` | The zip/jar `FileSystemProvider`. No library in the boot jars references it directly (Spring Boot reads nested jars with its own provider); kept as a safety net for code that opens a jar with `FileSystems.newFileSystem` (small) |
 
-- **Scope:** filings-mcp is left on `amazoncorretto:25-al2023-headless`. ONNX Runtime, used by its in-process embedding model, ships glibc native libraries that do not run on Alpine's musl. A jlink runtime on a glibc base would save less space and needs a separate module review, so it is not planned. Spring Boot layered-jar extraction is a separate change.
+- **No CDS archive:** no `--generate-cds-archive`. Measured on market-data-mcp, the full JDK with its default CDS archive started in about 2.7 s at 180 MiB, and the jlink runtime without CDS in about 2.5 s at 186 MiB. The archive would add about 10–15 MB per image for no measurable startup gain.
+- **Scope:** Spring Boot layered-jar extraction is a separate change.
 
 ### Image sizes
 
 Built with `docker compose build --pull`, linux/arm64, on 2026-11-14. Sizes are as reported by `docker images`. linux/amd64 sizes may differ slightly.
 
-| Image | Before (`amazoncorretto:25-alpine`) | After (`alpine:latest` + jlink) |
+| Image | Before | After |
 |---|---|---|
-| agent-app | 402 MB | 104 MB |
-| market-data-mcp | 399 MB | 101 MB |
+| agent-app | 402 MB (`amazoncorretto:25-alpine`) | 104 MB (`alpine:latest` + jlink) |
+| market-data-mcp | 399 MB (`amazoncorretto:25-alpine`) | 101 MB (`alpine:latest` + jlink) |
+| filings-mcp | 638 MB (`amazoncorretto:25-al2023-headless`) | 405 MB (`amazonlinux:2023` + jlink) |
 
 ## Consequences
 
-- Each image is about 300 MB smaller, which makes ECR pushes and Fargate Spot pulls faster.
+- agent-app and market-data-mcp are about 300 MB smaller each, and filings-mcp about 230 MB smaller, which makes ECR pushes and Fargate Spot pulls faster.
 - The final images contain no `javac`, `jshell` or other JDK tools. `java` and `jcmd` are on the `PATH`.
-- A dependency that needs a module missing from the list fails at runtime with `ClassNotFoundException` or `NoClassDefFoundError`, not at build time. When this happens, add the module to both Dockerfiles and to the table above. `jdeps --print-module-deps` on the boot jar can suggest the module.
-- The Iteration 2b image build must also use `--pull`, or it reuses a stale cached `alpine:latest`.
-- An unpinned `alpine:latest` can change between builds. A new Alpine release could break the image without any change in this repository. This is accepted in exchange for automatic security fixes.
+- A dependency that needs a module missing from the list fails at runtime with `ClassNotFoundException` or `NoClassDefFoundError`, not at build time. When this happens, add the module to all three Dockerfiles and to the table above. `jdeps --print-module-deps` on the boot jar can suggest the module.
+- In filings-mcp, a missing module surfaces as a `LinkageError` (`NoClassDefFoundError`, `UnsatisfiedLinkError`) on the ingestion thread. `FilingIngestion` catches only `RuntimeException`, so this kills the thread with a plain stderr stack trace (`Exception in thread`) and no `filingIngestionFailed` log line. Check the logs for these strings after changing the module list.
+- The Iteration 2b image build must also use `--pull`, or it reuses a stale cached `alpine:latest` or `amazonlinux:2023`.
+- Unpinned `alpine:latest` and `amazonlinux:2023` can change between builds. A new OS release could break an image without any change in this repository. This is accepted in exchange for automatic security fixes.
 
 ## Alternatives considered
 
@@ -61,3 +65,4 @@ Built with `docker compose build --pull`, linux/arm64, on 2026-11-14. Sizes are 
 - **Module list from `jdeps` at build time:** adapts to dependency changes. However, `jdeps` misses modules that are loaded reflectively or only by agents (`java.instrument`, `jdk.attach`, `jdk.jfr`), so a hand-reviewed list is needed anyway.
 - **Pinned Alpine version or digest:** reproducible builds, but security fixes need manual bumps.
 - **Distroless or glibc base for all three apps:** one base for every image, but a larger final image, and the full musl/Alpine path is already proven for the two apps without native libraries.
+- **Keep the full Corretto JDK for filings-mcp:** no module review for the native-library app, but about 230 MB more for JDK tools it never uses.

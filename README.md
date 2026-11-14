@@ -139,7 +139,7 @@ Compose reads the keys from a git-ignored `.env` file in the project root. Each 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
-docker compose build --pull     # build the images; --pull refreshes the unpinned alpine:latest base (ADR 0012)
+docker compose build --pull     # build the images; --pull refreshes the unpinned alpine:latest and amazonlinux:2023 bases (ADR 0012)
 docker compose up -d            # start the three apps, Postgres and log search
 docker compose ps               # all services Up; both MCP servers show (healthy)
 docker compose logs -f          # follow all apps' logs (Ctrl+C stops following, not the apps)
