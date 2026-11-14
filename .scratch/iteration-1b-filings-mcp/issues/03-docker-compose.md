@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions
 
@@ -15,7 +15,9 @@
 
 ## Acceptance criteria
 
-- [ ] `docker compose up --build` starts all three apps, and agent-app starts only after both MCP servers are healthy.
-- [ ] The filings question from ticket 01 works through Compose (manual check).
+- [x] `docker compose up --build` starts all three apps, and agent-app starts only after both MCP servers are healthy.
+- [x] The filings question from ticket 01 works through Compose (manual check).
 
 ## Comments
+
+- 2026-11-13: All Decisions were already implemented in a48feb1 (Dockerfile, compose service, agent-app URL + depends_on, `.env.example`). Verified: `docker compose up --build --wait` brought agent-app up only after market-data-mcp and filings-mcp were healthy. The ticket 01 question through Compose returned six MSFT 10-K rows with sec.gov links, and `toolsCalled` was `listFilings(MSFT, 10-K)`.
