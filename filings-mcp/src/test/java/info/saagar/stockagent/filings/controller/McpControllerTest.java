@@ -23,7 +23,12 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
 /// Drives `POST /mcp` with JSON-RPC messages, as the agent's MCP client sends them.
-@SpringBootTest(properties = "SEC_USER_AGENT=synthetic-agent test@example.com")
+@SpringBootTest(
+    properties = {
+      "SEC_USER_AGENT=synthetic-agent test@example.com",
+      "filings.rag.vector-store=in-memory",
+      "filings.rag.ingest-tickers="
+    })
 @Import(McpControllerTest.FakeEdgarConfig.class)
 class McpControllerTest {
 
@@ -74,15 +79,17 @@ class McpControllerTest {
   }
 
   @Test
-  void toolsListListsBothToolsWithTheirRequiredParameters() throws Exception {
+  void toolsListListsEveryToolWithItsRequiredParameters() throws Exception {
     JsonNode reply = postForReply("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
 
     JsonNode tools = reply.path("result").path("tools");
     assertThat(tools.valueStream().map(tool -> tool.path("name").asString()))
-        .containsExactlyInAnyOrder("listFilings", "getCompanyFacts");
+        .containsExactlyInAnyOrder("listFilings", "getCompanyFacts", "searchFilings");
     assertThat(requiredParameters(tools, "listFilings"))
         .containsExactlyInAnyOrder("ticker", "formType");
     assertThat(requiredParameters(tools, "getCompanyFacts")).containsExactly("ticker");
+    assertThat(requiredParameters(tools, "searchFilings"))
+        .containsExactlyInAnyOrder("ticker", "query");
   }
 
   @Test

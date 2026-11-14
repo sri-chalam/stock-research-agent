@@ -39,7 +39,7 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 | Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache, session state) |
 | Logging | SLF4J 2 + Logback |
 | Testing | JUnit Jupiter + AssertJ; versions managed by the Spring Boot BOM where available |
-| Container | Amazon Corretto 25 Alpine |
+| Container | Amazon Corretto 25 Alpine (`filings-mcp`: Corretto 25 on Amazon Linux 2023, because ONNX Runtime needs glibc) |
 
 ## 3. Project Structure
 
@@ -84,9 +84,10 @@ Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication
 | Package | Contents |
 |---|---|
 | `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) |
-| `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`) |
+| `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`, `FilingChunk`) |
 | `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store) |
+| `rag` | Filings RAG ingestion: startup ingestion on a virtual thread, section extraction and chunk metadata keys (`FilingIngestion`, `FilingSections`, `FilingChunkMetadata`) |
 
 ### `common`
 

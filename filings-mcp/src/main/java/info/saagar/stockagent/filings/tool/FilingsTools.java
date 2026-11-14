@@ -1,12 +1,23 @@
 package info.saagar.stockagent.filings.tool;
 
+import static dev.langchain4j.store.embedding.filter.MetadataFilterBuilder.metadataKey;
+
 import dev.langchain4j.agent.tool.P;
 import dev.langchain4j.agent.tool.Tool;
+import dev.langchain4j.data.document.Metadata;
+import dev.langchain4j.data.embedding.Embedding;
+import dev.langchain4j.data.segment.TextSegment;
+import dev.langchain4j.model.embedding.EmbeddingModel;
+import dev.langchain4j.store.embedding.EmbeddingMatch;
+import dev.langchain4j.store.embedding.EmbeddingSearchRequest;
+import dev.langchain4j.store.embedding.EmbeddingStore;
 import info.saagar.stockagent.filings.config.FilingsProperties;
+import info.saagar.stockagent.filings.config.RagProperties;
 import info.saagar.stockagent.filings.provider.EdgarClient;
 import info.saagar.stockagent.filings.provider.EdgarFiling;
 import info.saagar.stockagent.filings.provider.FilingsException;
 import info.saagar.stockagent.filings.provider.XbrlFact;
+import info.saagar.stockagent.filings.rag.FilingChunkMetadata;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -19,22 +30,28 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 /// SEC filings tools served over MCP.
 ///
-/// Only the tickers configured in `filings.tickers` are served. Errors are thrown, never returned:
-/// the MCP server turns a thrown exception into a tool result with `isError: true` and the
-/// exception message as its text. A returned error string would be reported to the agent as a
-/// success.
+/// `listFilings` and `getCompanyFacts` call EDGAR; `searchFilings` reads only the chunk store that
+/// ingestion fills. Only the tickers configured in `filings.tickers` are served. Errors are thrown,
+/// never returned: the MCP server turns a thrown exception into a tool result with `isError: true`
+/// and the exception message as its text. A returned error string would be reported to the agent as
+/// a success.
 @Component
 public class FilingsTools {
 
+  private static final Logger log = LoggerFactory.getLogger(FilingsTools.class);
+
   static final int MAX_FILINGS = 10;
+  private static final String SEARCH_UNAVAILABLE_MESSAGE =
+      "Filing search is unavailable; try again shortly.";
   private static final Set<String> SUPPORTED_FORM_TYPES = Set.of("10-K", "10-Q", "8-K");
   private static final String FORM_TYPE_MESSAGE =
       "formType is required and must be one of: 10-K, 10-Q, 8-K.";
-  private static final String ARCHIVES_URL = "https://www.sec.gov/Archives/edgar/data/";
   static final int MAX_FISCAL_YEARS = 3;
   private static final long MIN_FISCAL_YEAR_DAYS = 300;
   private static final Set<String> ALL_CONCEPT_NAMES =
@@ -43,6 +60,9 @@ public class FilingsTools {
           .collect(Collectors.toUnmodifiableSet());
 
   private final EdgarClient edgarClient;
+  private final EmbeddingModel embeddingModel;
+  private final EmbeddingStore<TextSegment> filingChunkStore;
+  private final int searchMaxResults;
   private final Map<String, String> ciksByTicker;
   private final String unknownTickerMessage;
 
@@ -50,8 +70,19 @@ public class FilingsTools {
   ///
   /// @param edgarClient source of filings
   /// @param filingsProperties holds the supported tickers and their CIKs
-  public FilingsTools(EdgarClient edgarClient, FilingsProperties filingsProperties) {
+  /// @param embeddingModel embeds `searchFilings` queries; the model ingestion embedded chunks with
+  /// @param filingChunkStore the ingested filing chunks
+  /// @param ragProperties holds the number of chunks `searchFilings` returns
+  public FilingsTools(
+      EdgarClient edgarClient,
+      FilingsProperties filingsProperties,
+      EmbeddingModel embeddingModel,
+      EmbeddingStore<TextSegment> filingChunkStore,
+      RagProperties ragProperties) {
     this.edgarClient = edgarClient;
+    this.embeddingModel = embeddingModel;
+    this.filingChunkStore = filingChunkStore;
+    this.searchMaxResults = ragProperties.searchMaxResults();
     this.ciksByTicker = new LinkedHashMap<>();
     filingsProperties
         .tickers()
@@ -79,11 +110,10 @@ public class FilingsTools {
       @P("Form type: 10-K, 10-Q or 8-K") String formType) {
     String normalizedFormType = normalizeFormType(formType);
     String cik = cikFor(ticker);
-    String cikWithoutLeadingZeros = Long.toString(Long.parseLong(cik));
     return edgarClient.fetchRecentFilings(cik).stream()
         .filter(edgarFiling -> normalizedFormType.equals(edgarFiling.form()))
         .limit(MAX_FILINGS)
-        .map(edgarFiling -> toFilingSummary(edgarFiling, cikWithoutLeadingZeros))
+        .map(edgarFiling -> toFilingSummary(edgarFiling, cik))
         .toList();
   }
 
@@ -114,6 +144,99 @@ public class FilingsTools {
       metricValues.addAll(latestFiscalYearValues(headlineMetric, companyFacts));
     }
     return new CompanyFacts(normalizeTicker(ticker), metricValues);
+  }
+
+  /// Searches the ingested narrative sections of a company's filings for the chunks most similar to
+  /// a query.
+  ///
+  /// Never calls EDGAR. There is no minimum score: the model sees each chunk's score.
+  ///
+  /// @param ticker a configured ticker, any case, e.g. `aapl`
+  /// @param query what to look for, e.g. `supply-chain risks`
+  /// @return up to `filings.rag.search-max-results` chunks, most similar first; empty when nothing
+  ///   is ingested for the ticker
+  /// @throws IllegalArgumentException when the ticker is not configured
+  /// @throws IllegalStateException when embedding the query or searching the store fails
+  @Tool(
+      "Search the narrative sections (such as Item 1A Risk Factors) of a US company's recent"
+          + " 10-K and 10-Q filings and return the most relevant text chunks. Each chunk has its"
+          + " text, form, fiscalPeriod (end of the period the filing covers), section,"
+          + " accessionNumber, a sec.gov url, and a similarity score from 0 to 1, so it can be"
+          + " cited. Use it for questions about what a filing says, such as risks. Only a fixed"
+          + " set of 10 large US companies is supported; another ticker returns an error listing"
+          + " the supported ones.")
+  public List<FilingChunk> searchFilings(
+      @P("Ticker symbol, e.g. AAPL") String ticker,
+      @P("What to search for, e.g. supply-chain risks") String query) {
+    String normalizedTicker = normalizeTicker(ticker);
+    requireConfiguredTicker(normalizedTicker);
+    long startNanos = System.nanoTime();
+    List<EmbeddingMatch<TextSegment>> chunkMatches;
+    long embedDurationTimeMs;
+    try {
+      Embedding queryEmbedding = embeddingModel.embed(query).content();
+      embedDurationTimeMs = elapsedMillis(startNanos);
+      EmbeddingSearchRequest searchRequest =
+          EmbeddingSearchRequest.builder()
+              .queryEmbedding(queryEmbedding)
+              .maxResults(searchMaxResults)
+              .filter(metadataKey(FilingChunkMetadata.TICKER).isEqualTo(normalizedTicker))
+              .build();
+      chunkMatches = filingChunkStore.search(searchRequest).matches();
+    } catch (RuntimeException searchException) {
+      // McpServer turns a thrown exception into a tool error without logging it. A store
+      // exception's message can carry SQL and vectors, so neither it nor the cause is passed on.
+      log.atError()
+          .addKeyValue("eventName", "filingSearchFailed")
+          .addKeyValue(
+              "eventData",
+              Map.of(
+                  "ticker",
+                  normalizedTicker,
+                  "exceptionType",
+                  searchException.getClass().getName(),
+                  "exceptionMessageSuppressed",
+                  true,
+                  "durationTimeMs",
+                  elapsedMillis(startNanos)))
+          .log("Filing search failed");
+      throw new IllegalStateException(SEARCH_UNAVAILABLE_MESSAGE);
+    }
+    log.atInfo()
+        .addKeyValue("eventName", "filingSearchCompleted")
+        .addKeyValue(
+            "eventData",
+            Map.of(
+                "ticker",
+                normalizedTicker,
+                "queryChars",
+                query == null ? 0 : query.length(),
+                "resultCount",
+                chunkMatches.size(),
+                "topScore",
+                chunkMatches.isEmpty() ? 0.0 : chunkMatches.getFirst().score(),
+                "embedDurationTimeMs",
+                embedDurationTimeMs,
+                "completeExecDurationTimeMs",
+                elapsedMillis(startNanos)))
+        .log("Filing search completed");
+    return chunkMatches.stream().map(FilingsTools::toFilingChunk).toList();
+  }
+
+  private static long elapsedMillis(long startNanos) {
+    return (System.nanoTime() - startNanos) / 1_000_000;
+  }
+
+  private static FilingChunk toFilingChunk(EmbeddingMatch<TextSegment> chunkMatch) {
+    Metadata chunkMetadata = chunkMatch.embedded().metadata();
+    return new FilingChunk(
+        chunkMatch.embedded().text(),
+        chunkMetadata.getString(FilingChunkMetadata.FORM),
+        chunkMetadata.getString(FilingChunkMetadata.FISCAL_PERIOD),
+        chunkMetadata.getString(FilingChunkMetadata.SECTION),
+        chunkMetadata.getString(FilingChunkMetadata.ACCESSION_NUMBER),
+        chunkMetadata.getString(FilingChunkMetadata.URL),
+        chunkMatch.score());
   }
 
   private static List<MetricValue> latestFiscalYearValues(
@@ -188,6 +311,10 @@ public class FilingsTools {
     return rawTicker == null ? "" : rawTicker.strip().toUpperCase(Locale.ROOT);
   }
 
+  private void requireConfiguredTicker(String rawTicker) {
+    cikFor(rawTicker);
+  }
+
   private String cikFor(String rawTicker) {
     String cik = ciksByTicker.get(normalizeTicker(rawTicker));
     if (cik == null) {
@@ -196,20 +323,12 @@ public class FilingsTools {
     return cik;
   }
 
-  private static FilingSummary toFilingSummary(
-      EdgarFiling edgarFiling, String cikWithoutLeadingZeros) {
-    String documentUrl =
-        ARCHIVES_URL
-            + cikWithoutLeadingZeros
-            + "/"
-            + edgarFiling.accessionNumber().replace("-", "")
-            + "/"
-            + edgarFiling.primaryDocument();
+  private static FilingSummary toFilingSummary(EdgarFiling edgarFiling, String cik) {
     return new FilingSummary(
         edgarFiling.form(),
         edgarFiling.filingDate(),
         edgarFiling.reportDate(),
         edgarFiling.accessionNumber(),
-        documentUrl);
+        edgarFiling.documentUrl(cik));
   }
 }

@@ -24,4 +24,11 @@ public interface EdgarClient {
   /// @return the facts of those concepts in every unit; empty when the company reports none
   /// @throws FilingsException when the call fails; the message is safe to show to the model
   List<XbrlFact> fetchCompanyFacts(String cik, Set<String> conceptNames);
+
+  /// Downloads a filing's primary document from `www.sec.gov/Archives`.
+  ///
+  /// @param documentUrl the document's sec.gov link, from [EdgarFiling#documentUrl(String)]
+  /// @return the document's HTML
+  /// @throws FilingsException when the call fails; the message is safe to show to the model
+  String fetchFilingDocument(String documentUrl);
 }

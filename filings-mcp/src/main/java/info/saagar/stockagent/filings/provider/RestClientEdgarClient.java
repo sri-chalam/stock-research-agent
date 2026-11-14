@@ -2,6 +2,7 @@ package info.saagar.stockagent.filings.provider;
 
 import com.fasterxml.jackson.annotation.JsonProperty;
 import java.math.BigDecimal;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -28,6 +29,7 @@ public class RestClientEdgarClient implements EdgarClient {
 
   private static final String SUBMISSIONS_ENDPOINT = "/submissions/CIK{cik}.json";
   private static final String COMPANY_FACTS_ENDPOINT = "/api/xbrl/companyfacts/CIK{cik}.json";
+  private static final String FILING_DOCUMENT_ENDPOINT = "/Archives/edgar/data";
 
   static final String REJECTED_USER_AGENT_MESSAGE =
       "SEC EDGAR rejected the request (check SEC_USER_AGENT).";
@@ -70,12 +72,54 @@ public class RestClientEdgarClient implements EdgarClient {
     return companyFacts;
   }
 
-  /// Sends the GET and maps every failure to a logged [FilingsException].
+  /// {@inheritDoc}
+  ///
+  /// The document lives on `www.sec.gov`, not the configured `data.sec.gov` base URL, so the
+  /// absolute URL is requested as is.
+  @Override
+  public String fetchFilingDocument(String documentUrl) {
+    long startNanos = System.nanoTime();
+    String filingHtml =
+        send(
+            edgarRestClient.get().uri(URI.create(documentUrl)),
+            FILING_DOCUMENT_ENDPOINT,
+            null,
+            String.class,
+            startNanos);
+    String nonNullFilingHtml = filingHtml == null ? "" : filingHtml;
+    log.atInfo()
+        .addKeyValue("eventName", "edgarDocumentDownloaded")
+        .addKeyValue(
+            "eventData",
+            Map.of(
+                "edgarEndpoint",
+                FILING_DOCUMENT_ENDPOINT,
+                "documentUrl",
+                documentUrl,
+                "payloadSizeKB",
+                // Characters, not bytes: counting bytes would copy a multi-MB document. EDGAR HTML
+                // is
+                // almost all ASCII, so the two barely differ.
+                nonNullFilingHtml.length() / 1024,
+                "durationTimeMs",
+                elapsedMillis(startNanos)))
+        .log("SEC EDGAR filing document downloaded");
+    return nonNullFilingHtml;
+  }
+
   private <T> T get(String endpoint, String cik, Class<T> responseType, long startNanos) {
+    return send(edgarRestClient.get().uri(endpoint, cik), endpoint, cik, responseType, startNanos);
+  }
+
+  /// Sends the GET with the User-Agent and maps every failure to a logged [FilingsException].
+  private <T> T send(
+      RestClient.RequestHeadersSpec<?> edgarRequest,
+      String endpoint,
+      String cik,
+      Class<T> responseType,
+      long startNanos) {
     try {
-      return edgarRestClient
-          .get()
-          .uri(endpoint, cik)
+      return edgarRequest
           .header(HttpHeaders.USER_AGENT, secUserAgent)
           .retrieve()
           .body(responseType);

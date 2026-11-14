@@ -118,6 +118,21 @@ class RestClientEdgarClientTest {
     edgarServer.verify();
   }
 
+  @Test
+  void downloadsTheFilingDocumentFromItsAbsoluteSecGovUrlWithTheUserAgent() {
+    String documentUrl =
+        "https://www.sec.gov/Archives/edgar/data/789019/000095017026000002/syn-10k.htm";
+    edgarServer
+        .expect(requestTo(documentUrl))
+        .andExpect(method(HttpMethod.GET))
+        .andExpect(header("User-Agent", SEC_USER_AGENT))
+        .andRespond(withSuccess("<html><body>Item 1A.</body></html>", MediaType.TEXT_HTML));
+
+    assertThat(edgarClient.fetchFilingDocument(documentUrl))
+        .isEqualTo("<html><body>Item 1A.</body></html>");
+    edgarServer.verify();
+  }
+
   @ParameterizedTest
   @CsvSource({
     "403, SEC EDGAR rejected the request (check SEC_USER_AGENT).",

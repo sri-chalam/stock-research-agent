@@ -66,11 +66,21 @@ AGENTS.md §1 "Project intent": RAG is the lesson, EDGAR is not. Keep parsing an
 
 ## Acceptance criteria
 
-- [ ] `./gradlew build` passes.
-- [ ] `docker compose up` starts Postgres with pgvector, and filings-mcp logs a completed ingestion for AAPL's latest 10-K Item 1A.
-- [ ] `curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' -d '{"message":"What supply-chain risks did Apple'\''s last 10-K describe?"}'` returns an answer with inline citations naming 10-K, Item 1A, the accession and a sec.gov link, with `searchFilings` in `toolsCalled` (manual check).
-- [ ] `searchFilings` makes no EDGAR call (verified by the ingestion and tool tests).
-- [ ] The Market data agent can't see `searchFilings`.
-- [ ] The `SEC_USER_AGENT` value and the database password appear in no log line.
+- [x] `./gradlew build` passes.
+- [x] `docker compose up` starts Postgres with pgvector, and filings-mcp logs a completed ingestion for AAPL's latest 10-K Item 1A.
+- [x] `curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' -d '{"message":"What supply-chain risks did Apple'\''s last 10-K describe?"}'` returns an answer with inline citations naming 10-K, Item 1A, the accession and a sec.gov link, with `searchFilings` in `toolsCalled` (manual check).
+- [x] `searchFilings` makes no EDGAR call (verified by the ingestion and tool tests).
+- [x] The Market data agent can't see `searchFilings`.
+- [x] The `SEC_USER_AGENT` value and the database password appear in no log line.
 
 ## Comments
+
+- 2026-11-13: Implemented, not committed yet (pending review). Verified through `docker compose up --build`: filings-mcp logged `filingIngested` for AAPL 10-K `0000320193-26-000026` (fiscal period 2026-09-26), Item 1A, 86,410 characters into 68 chunks (largest 1,599 characters), in 3.8 s. The table is `filings.filing_chunks`, owned by `filings_mcp`, which gets "permission denied" when it tries to create a table in `public`. The acceptance curl returned an answer with `[10-K FY2026, Item 1A, 0000320193-26-000026](https://www.sec.gov/...)` citations and `toolsCalled` = `searchFilings(AAPL, "supply chain risks")`. The `SEC_USER_AGENT` value and both database passwords appear in none of the 185 Compose log lines. Decisions taken during implementation:
+  - Table placement: a schema-qualified table name (`filings.filing_chunks`). PgVectorEmbeddingStore supports it, so no `search_path` change is needed. The init script creates the `vector` extension, and the store runs with `skipCreateVectorExtension(true)` because the app user may not create extensions.
+  - The jsoup transformer adds no line breaks for `div`s, and EDGAR iXBRL puts headings in `div`s. The heading regexes therefore match anywhere in the text, not at line starts. The next-Item regex requires a period (`Item 1B.`) so that cross-references such as "Item 7 of this Form 10-K" don't end the section. Accepted gaps: page footers ("Apple Inc. | 2026 Form 10-K | 19") and missing spaces between `div` paragraphs end up in the chunk text.
+  - `filings.rag.vector-store: pgvector | in-memory`. The Spring Boot tests use `in-memory` with an empty `ingest-tickers`, so they need neither Postgres nor EDGAR.
+  - A Hikari pool backs the pgvector store, so a `searchFilings` call doesn't open a new connection.
+  - Re-ingestion first removes a filing's chunks by `accessionNumber`, so restarts don't create duplicates.
+  - The filings-mcp image is now `amazoncorretto:25-al2023-headless`, not Alpine, because ONNX Runtime and the DJL tokenizer need glibc. Its healthcheck uses curl, because the image has no wget.
+  - The Filings analyst prompt is now `filings-agent-v2`.
+  - Open: with `max-tokens: 1024`, the Filings analyst's answer was cut off mid-sentence. All its citations are repeated inline, so the answer runs long.

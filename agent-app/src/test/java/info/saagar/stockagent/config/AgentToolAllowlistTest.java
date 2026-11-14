@@ -34,7 +34,8 @@ class AgentToolAllowlistTest {
           "getMarketNews",
           "getEarningsCalendar",
           "getBasicFinancials");
-  private static final Set<String> FILINGS_TOOL_NAMES = Set.of("listFilings", "getCompanyFacts");
+  private static final Set<String> FILINGS_TOOL_NAMES =
+      Set.of("listFilings", "getCompanyFacts", "searchFilings");
   private static final ToolProviderRequest TOOL_PROVIDER_REQUEST =
       new ToolProviderRequest("memory-1", UserMessage.from("List Microsoft's recent 10-K filings"));
 
@@ -47,7 +48,8 @@ class AgentToolAllowlistTest {
           "getEarningsCalendar",
           "getBasicFinancials",
           "listFilings",
-          "getCompanyFacts");
+          "getCompanyFacts",
+          "searchFilings");
   private final McpClient sharedMcpClient =
       new McpClientConfig()
           .filingsMcpClient(

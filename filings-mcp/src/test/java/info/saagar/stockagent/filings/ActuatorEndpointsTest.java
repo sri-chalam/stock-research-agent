@@ -14,7 +14,12 @@ import org.springframework.web.context.WebApplicationContext;
 
 /// The Docker Compose healthcheck needs `/actuator/health`; no other actuator endpoint may be
 /// exposed, because `/actuator/env` would reveal the SEC User-Agent.
-@SpringBootTest(properties = "SEC_USER_AGENT=synthetic-agent test@example.com")
+@SpringBootTest(
+    properties = {
+      "SEC_USER_AGENT=synthetic-agent test@example.com",
+      "filings.rag.vector-store=in-memory",
+      "filings.rag.ingest-tickers="
+    })
 class ActuatorEndpointsTest {
 
   @Autowired private WebApplicationContext webApplicationContext;

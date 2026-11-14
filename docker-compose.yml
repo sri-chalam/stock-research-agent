@@ -2,6 +2,26 @@
 # Neither app has auth before Iteration 5, so host ports are bound to 127.0.0.1 only. Inside the
 # containers the apps listen on 0.0.0.0 so Compose networking and the port bindings can reach them.
 services:
+  # One Postgres + pgvector for the project, one schema per app (initdb/ creates them). The
+  # database is disposable: `docker compose down` drops it and filings-mcp re-ingests on startup.
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: stockagent
+      POSTGRES_USER: postgres
+      # Local-dev defaults; override them in .env.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-dev}
+      FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+    volumes:
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "stockagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   market-data-mcp:
     build:
       context: .
@@ -29,8 +49,15 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       # SEC EDGAR requires a User-Agent with contact details; only this service gets it.
       SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT in .env}
+      FILINGS_DB_HOST: postgres
+      FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+    # filings-mcp fails to start when Postgres is unreachable.
+    depends_on:
+      postgres:
+        condition: service_healthy
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8082/actuator/health"]
+      # The filings-mcp image is Amazon Linux, which has curl but no wget.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8082/actuator/health"]
       interval: 5s
       timeout: 3s
       retries: 12

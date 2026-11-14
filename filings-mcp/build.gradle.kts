@@ -10,6 +10,10 @@ dependencies {
     implementation(libs.spring.boot.starter.actuator)
     implementation(libs.langchain4j)
     implementation(libs.langchain4j.community.mcp.server)
+    implementation(libs.langchain4j.pgvector)
+    implementation(libs.hikaricp)
+    implementation(libs.langchain4j.embeddings.bge.small.en.v15.q)
+    implementation(libs.langchain4j.document.transformer.jsoup)
 
     testImplementation(libs.spring.boot.starter.test)
 }

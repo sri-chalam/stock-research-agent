@@ -17,10 +17,16 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :filings-mcp:build -x test --no-daemon --console=plain \
     && cp filings-mcp/build/libs/filings-mcp-*[!n].jar /workspace/app.jar
 
-FROM amazoncorretto:25-alpine
-RUN addgroup -S app && adduser -S app -G app
+# Not Alpine: ONNX Runtime and the DJL tokenizer behind the in-process embedding model ship only
+# glibc native libraries. The headless image has no useradd, so the app user is added by hand;
+# DJL caches its native library under the user's home.
+FROM amazoncorretto:25-al2023-headless
+RUN echo 'app:x:1000:1000::/home/app:/sbin/nologin' >> /etc/passwd \
+    && echo 'app:x:1000:' >> /etc/group \
+    && mkdir -p /home/app /app && chown 1000:1000 /home/app /app
 USER app
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
 EXPOSE 8082
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# ONNX Runtime loads its native library through System.load.
+ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]

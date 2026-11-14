@@ -37,3 +37,22 @@ filings:
     # 10-K yet. Exxon Mobil Corp's 10-Ks and 10-Qs are under this CIK.
     XOM: "0000034088"
     NFLX: "0001065280"
+  # RAG over filings: ingestion on startup, chunk store and searchFilings.
+  rag:
+    # pgvector (Postgres, see docker-compose.yml) or in-memory (empty on every start; for tests).
+    vector-store: pgvector
+    # Tickers whose latest 10-K Item 1A is ingested on startup; each must be in filings.tickers.
+    ingest-tickers:
+      - AAPL
+    # In characters: about 400 tokens with about 50 of overlap. bge-small-en-v1.5 reads at most
+    # 512 tokens per chunk and silently drops the rest.
+    chunk-size-chars: 1600
+    chunk-overlap-chars: 200
+    search-max-results: 5
+    # The password comes from the FILINGS_DB_PASSWORD environment variable.
+    database:
+      host: ${FILINGS_DB_HOST:localhost}
+      port: ${FILINGS_DB_PORT:5432}
+      name: ${FILINGS_DB_NAME:stockagent}
+      user: ${FILINGS_DB_USER:filings_mcp}
+      table: filings.filing_chunks

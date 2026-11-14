@@ -86,10 +86,11 @@ Three apps run side by side. `agent-app` receives the chat request (`POST /api/c
 curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
-The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has two tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, and `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years. Both support only 10 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
+The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has three tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years, and `searchFilings` returns the 5 filing chunks most similar to a query (RAG). On startup, `filings-mcp` ingests the latest 10-K Item 1A (Risk Factors) of the tickers in `filings.rag.ingest-tickers` into Postgres + pgvector, in the background, with an in-process embedding model. `searchFilings` reads only that store and never calls EDGAR. All tools support only 10 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
 
 ```
 curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
+                                                                                                  └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
 ### 1. Set environment variables
@@ -101,6 +102,8 @@ curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client →
 | `ANTHROPIC_API_KEY` | `agent-app` | Yes |
 | `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
 | `FILINGS_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8082/mcp` |
+| `FILINGS_DB_PASSWORD` | `filings-mcp`, `postgres` | With Gradle, yes: the password of the `filings_mcp` database user. Compose defaults it to `filings-local-dev` |
+| `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
@@ -117,8 +120,10 @@ Use either Gradle or Docker Compose. Both bind ports 8080, 8081 and 8082 on `127
 export FINNHUB_API_KEY=...
 ./gradlew :market-data-mcp:bootRun
 
-# terminal 2
+# terminal 2: filings-mcp needs Postgres + pgvector; run only that container from Compose
+docker compose up -d postgres
 export SEC_USER_AGENT="stock-research-agent you@example.com"
+export FILINGS_DB_PASSWORD=filings-local-dev
 ./gradlew :filings-mcp:bootRun
 
 # terminal 3 (after both MCP servers have started)
@@ -128,7 +133,7 @@ export ANTHROPIC_API_KEY=...
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`).
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY

@@ -8,7 +8,7 @@ import dev.langchain4j.service.SystemMessage;
 public interface FilingsAgent {
 
   /// ID of the system prompt version, taken from its filename and logged with every answer.
-  String PROMPT_ID = "filings-agent-v1";
+  String PROMPT_ID = "filings-agent-v2";
 
   /// Answers a user's filings question.
   ///

@@ -34,6 +34,7 @@ stock-agent:
       allowed-tools:
         - listFilings
         - getCompanyFacts
+        - searchFilings
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
   # when any of them is unreachable, so start market-data-mcp and filings-mcp first.
   mcp-servers:

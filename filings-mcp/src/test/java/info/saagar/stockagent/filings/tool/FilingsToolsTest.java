@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
+import dev.langchain4j.store.embedding.inmemory.InMemoryEmbeddingStore;
 import info.saagar.stockagent.filings.config.FilingsProperties;
+import info.saagar.stockagent.filings.config.RagProperties;
 import info.saagar.stockagent.filings.provider.EdgarFiling;
 import info.saagar.stockagent.filings.provider.FakeEdgarClient;
 import info.saagar.stockagent.filings.provider.XbrlFact;
@@ -27,7 +29,12 @@ class FilingsToolsTest {
     Map<String, String> ciksByTicker = new LinkedHashMap<>();
     ciksByTicker.put("AAPL", "0000320193");
     ciksByTicker.put("MSFT", MSFT_CIK);
-    return new FilingsTools(fakeEdgarClient, new FilingsProperties(null, null, null, ciksByTicker));
+    return new FilingsTools(
+        fakeEdgarClient,
+        new FilingsProperties(null, null, null, ciksByTicker),
+        null,
+        new InMemoryEmbeddingStore<>(),
+        new RagProperties(List.of(), 1600, 200, 5, null));
   }
 
   private static EdgarFiling syntheticFiling(String form, int filingNumber) {
