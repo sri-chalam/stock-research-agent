@@ -13,10 +13,12 @@ server:
 stock-agent:
   agents:
     # Plans each request, delegates sub-questions to the specialist agents below and merges their
-    # answers. max-steps caps the specialist invocations per request.
+    # answers. max-steps caps the specialist invocations per request. The planner writes the final
+    # merged answer inside its "done" JSON, so max-tokens must exceed the specialists' combined
+    # output; a truncated "done" JSON fails to parse and the request returns 500.
     supervisor:
       model: claude-haiku-5-5
-      max-tokens: 1024
+      max-tokens: 4096
       timeout: 30s
       max-steps: 4
     market-data:
