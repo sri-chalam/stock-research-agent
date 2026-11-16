@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-The application needs upstream API keys (Finnhub, FRED) and an Anthropic key. The spec first said each user supplies their own data-provider keys. Per-user keys would need encrypted key storage, passing the key from user to agent to MCP server, and per-user rate limits. None of that helps the learning goals.
+The application needs an upstream API key (Finnhub) and an Anthropic key. The spec first said each user supplies their own data-provider keys. Per-user keys would need encrypted key storage, passing the key from user to agent to MCP server, and per-user rate limits. None of that helps the learning goals.
 
 ## Decision
 
@@ -16,6 +16,8 @@ The code reads each key from an environment variable (for example `FINNHUB_API_K
 
 - **Local:** a git-ignored `.env` file used by Docker Compose, or exported env vars.
 - **AWS:** SSM Parameter Store SecureString (standard tier), stored once in the persistent stack so teardown does not delete it (DEP-2). The CDK task definition lists each parameter under the container's `secrets`, and ECS injects it as an environment variable at task start. The task execution role needs `ssm:GetParameters` on those parameters. The default AWS-managed key needs no extra KMS permission.
+
+`SEC_USER_AGENT` (used by `filings-mcp`) follows the same path. SEC EDGAR needs no key, but requires a `User-Agent` with a contact email. The value is not secret, but it is personal, so it stays out of Git: an env var locally and an SSM parameter in AWS.
 
 Secrets Manager is not used (DEP-5).
 

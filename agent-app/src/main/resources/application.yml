@@ -1,6 +1,6 @@
 spring:
   application:
-    name: stock-research-agent
+    name: agent-app
   config:
     import: classpath:common.yml
 
@@ -12,6 +12,15 @@ server:
 # ANTHROPIC_API_KEY environment variable.
 stock-agent:
   agents:
+    # Plans each request, delegates sub-questions to the specialist agents below and merges their
+    # answers. max-steps caps the specialist invocations per request. The planner writes the final
+    # merged answer inside its "done" JSON, so max-tokens must exceed the specialists' combined
+    # output; a truncated "done" JSON fails to parse and the request returns 500.
+    supervisor:
+      model: claude-haiku-5-5
+      max-tokens: 4096
+      timeout: 30s
+      max-steps: 4
     market-data:
       model: claude-haiku-5-5
       max-tokens: 1024
@@ -25,11 +34,25 @@ stock-agent:
         - getMarketNews
         - getEarningsCalendar
         - getBasicFinancials
+    # The Filings analyst.
+    filings:
+      model: claude-haiku-5-5
+      max-tokens: 1024
+      timeout: 30s
+      max-steps: 4
+      allowed-tools:
+        - listFilings
+        - getCompanyFacts
+        - searchFilings
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
-  # when one is unreachable, so start market-data-mcp first.
+  # when any of them is unreachable, so start market-data-mcp and filings-mcp first.
   mcp-servers:
     market-data:
       url: ${MARKET_DATA_MCP_URL:http://localhost:8081/mcp}
       # Pinned so the client skips the server/discover probe, which our servers do not answer.
+      protocol-version: 2025-11-25
+      tool-execution-timeout: 10s
+    filings:
+      url: ${FILINGS_MCP_URL:http://localhost:8082/mcp}
       protocol-version: 2025-11-25
       tool-execution-timeout: 10s

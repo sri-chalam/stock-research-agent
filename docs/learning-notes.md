@@ -35,8 +35,44 @@ Short points worth remembering: how things work and what tripped us up. Design d
 - The LangChain4j MCP client sends `ping` as its health check, and `McpServer` doesn't answer it, so the controller answers `ping` itself.
 - agent-app pins MCP protocol version `2025-11-25`. Without the pin, the client sends a `server/discover` probe, which our servers don't support.
 - When a tool throws, the library turns the exception into an `isError: true` result and doesn't log it. Log the failure where it happens (for example `finnhubCallFailed` in the Finnhub client).
-- agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` first.
+- agent-app fails to start when an MCP server is unreachable. Start `market-data-mcp` and `filings-mcp` first.
 - Finnhub's hosted MCP server supports only per-user OAuth for Claude and ChatGPT, so agent-app can't use it. It's still useful in Claude Desktop for exploration. See [ADR 0009](adr/0009-own-market-data-mcp-instead-of-finnhub-hosted-mcp.md).
+
+### Runtime flow of a chat request
+
+```
+ChatController → agent.chat(prompt)                        (AiServices proxy)
+  → McpToolProvider → McpClient → POST /mcp  tools/list   (first request only, then cached; allowlist filter applied)
+  → Claude gets prompt + tool specs, replies "call getQuote(AAPL)"
+  → McpClient → POST /mcp  tools/call
+      → McpController → McpServer.handle → MarketDataTools.getQuote → Finnhub
+  → tool result back to Claude → final answer → ChatController
+```
+
+- No project code calls `/mcp`. LangChain4j's `StreamableHttpMcpTransport` (inside `DefaultMcpClient`, built in [McpClientConfig](../agent-app/src/main/java/info/saagar/stockagent/config/McpClientConfig.java)) sends every request.
+- The agent interface has no tool code. Claude picks the tool; the `AiServices` proxy runs it through the MCP client and loops until Claude returns text.
+- `DefaultMcpClient` caches the tool list (`cacheToolList` defaults to `true`). `McpToolProvider` asks for it on every request, but only the first one reaches the server. A restart of agent-app is the only way to pick up tool changes, since our stateless servers can't send `notifications/tools/list_changed`.
+- Outside chat requests, the client sends `initialize` at agent-app startup and `ping` as a health check.
+- `McpController` routing: it answers `ping` itself, wraps `tools/call` in `handleToolCall` (logging), and passes everything else to `McpServer.handle`.
+- `McpServer.handle` switches on `method`: `initialize` → `handleInitialize`, `tools/list` → `handleListTools`, `tools/call` → `handleCallTool` (invokes the `@Tool` method), anything else → "Method not found" error. A message with no numeric `id` returns `null`, so the controller replies `202 Accepted`.
+
+## Agents (langchain4j-agentic)
+
+- `AgenticServices.agentBuilder` has no `afterToolExecution` hook, which `AiServices` has. To observe tool calls, implement `AgentListener` (`afterAgentToolExecution`) instead.
+- Attach each listener once, on the Supervisor. If its `inheritedBySubagents()` returns `true`, it also gets every specialist's agent and tool events, so you don't register it on each specialist. `ToolExecutionLogger` (logs `toolExecuted`) and `AgentProvenanceListener` (records the agents and tools for `answerProvenance`) work this way.
+- In `beforeAgentInvocation`, `agent.parent() == null` means the Supervisor itself. Any other agent is a specialist.
+- Each run gets a fresh agentic scope with a random `memoryId`. `AgentProvenanceListener` keys each run's records by it.
+- The Supervisor calls specialists one at a time. Its planner picks one agent, reads that agent's answer, then picks the next one or finishes. A filings question and a quote question don't depend on each other, so they could run in parallel. That would need a parallel agent, which always calls every agent it holds.
+- `supervisorAgent.invokeWithAgenticScope(...)` runs the whole flow: planning, specialist calls and tool calls. It returns a `ResultWithAgenticScope`:
+  - `result()`: the final answer.
+  - `agenticScope()`: the run's shared context. It holds the run's `memoryId` and the values agents read and write (for example, the `request` the planner hands a specialist).
+- In `ChatController`, the code after `invokeWithAgenticScope` calls no agents. It only reads what the listener recorded and builds the `toolsCalled` list for the response.
+
+## SEC EDGAR
+
+- EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.
+- SEC rejects a request with 403 unless its `User-Agent` names the app and gives a contact email. `filings-mcp` reads it from `SEC_USER_AGENT` and fails at startup without it.
+- XBRL tags vary by company. Revenue, for example, may be `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax` or `SalesRevenueNet`. `getCompanyFacts` hides this behind a small fallback list per metric (`HeadlineMetric`).
 
 ## Git
 

@@ -1,7 +1,27 @@
-# Local stack: `docker compose up --build`. Keys come from the git-ignored .env (copy .env.example).
+# Local stack: `docker compose build --pull && docker compose up` (`--pull`: ADR 0012). Keys come from the git-ignored .env (copy .env.example).
 # Neither app has auth before Iteration 5, so host ports are bound to 127.0.0.1 only. Inside the
 # containers the apps listen on 0.0.0.0 so Compose networking and the port bindings can reach them.
 services:
+  # One Postgres + pgvector for the project, one schema per app (initdb/ creates them). The
+  # database is disposable: `docker compose down` drops it and filings-mcp re-ingests on startup.
+  postgres:
+    image: pgvector/pgvector:0.8.1-pg17
+    ports:
+      - "127.0.0.1:5432:5432"
+    environment:
+      POSTGRES_DB: stockagent
+      POSTGRES_USER: postgres
+      # Local-dev defaults; override them in .env.
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-dev}
+      FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+    volumes:
+      - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "postgres", "-d", "stockagent"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   market-data-mcp:
     build:
       context: .
@@ -19,6 +39,30 @@ services:
       retries: 12
       start_period: 10s
 
+  filings-mcp:
+    build:
+      context: .
+      dockerfile: filings-mcp/Dockerfile
+    ports:
+      - "127.0.0.1:8082:8082"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      # SEC EDGAR requires a User-Agent with contact details; only this service gets it.
+      SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT in .env}
+      FILINGS_DB_HOST: postgres
+      FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+    # filings-mcp fails to start when Postgres is unreachable.
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      # The filings-mcp image is Amazon Linux, which has curl but no wget.
+      test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   agent-app:
     build:
       context: .
@@ -28,9 +72,42 @@ services:
     environment:
       SERVER_ADDRESS: 0.0.0.0
       STOCK_AGENT_MCP_SERVERS_MARKET_DATA_URL: http://market-data-mcp:8081/mcp
+      STOCK_AGENT_MCP_SERVERS_FILINGS_URL: http://filings-mcp:8082/mcp
       # Only this service gets the Anthropic key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
-    # agent-app fails to start when market-data-mcp is unreachable.
+    # agent-app fails to start when either MCP server is unreachable.
     depends_on:
       market-data-mcp:
         condition: service_healthy
+      filings-mcp:
+        condition: service_healthy
+
+  # Log search (ADR 0011): Alloy ships every container's stdout to Loki; Grafana queries Loki.
+  # Loki has no volume, so `docker compose down` wipes the logs.
+  loki:
+    image: grafana/loki:3.7.10
+
+  alloy:
+    image: grafana/alloy:v1.21.3
+    environment:
+      # Alloy collects only this project's containers.
+      COMPOSE_PROJECT: ${COMPOSE_PROJECT_NAME}
+    volumes:
+      - ./docker/alloy/config.alloy:/etc/alloy/config.alloy:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    depends_on:
+      - loki
+
+  grafana:
+    image: grafana/grafana:13.3.1
+    ports:
+      - "127.0.0.1:3000:3000"
+    environment:
+      # Local only: anonymous Admin, no login form. The port is bound to 127.0.0.1.
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: Admin
+      GF_AUTH_DISABLE_LOGIN_FORM: "true"
+    volumes:
+      - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
+    depends_on:
+      - loki

@@ -10,6 +10,8 @@ spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-start
 spring-boot-starter-actuator = { module = "org.springframework.boot:spring-boot-starter-actuator" }
 spring-boot-starter-validation = { module = "org.springframework.boot:spring-boot-starter-validation" }
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
+# Connection pool for filings-mcp's pgvector store; version managed by the Spring Boot BOM.
+hikaricp = { module = "com.zaxxer:HikariCP" }
 
 langchain4j-bom = { module = "dev.langchain4j:langchain4j-bom", version.ref = "langchain4j" }
 langchain4j = { module = "dev.langchain4j:langchain4j" }
@@ -18,6 +20,10 @@ langchain4j-agentic = { module = "dev.langchain4j:langchain4j-agentic", version.
 langchain4j-mcp = { module = "dev.langchain4j:langchain4j-mcp", version.ref = "langchain4j-beta" }
 # Community module; ships only a stdio transport, so market-data-mcp wraps it in a Spring MVC controller.
 langchain4j-community-mcp-server = { module = "dev.langchain4j:langchain4j-community-mcp-server", version.ref = "langchain4j-beta" }
+# filings-mcp RAG. Beta modules, but their versions are managed by the langchain4j BOM.
+langchain4j-pgvector = { module = "dev.langchain4j:langchain4j-pgvector" }
+langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q" }
+langchain4j-document-transformer-jsoup = { module = "dev.langchain4j:langchain4j-document-transformer-jsoup" }
 
 # Gradle plugins used by the buildSrc convention plugins.
 spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "spring-boot" }

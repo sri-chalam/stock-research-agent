@@ -1,14 +1,13 @@
 package info.saagar.stockagent.config;
 
+import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.mcp.McpToolProvider;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
 import dev.langchain4j.service.tool.ToolProvider;
 import info.saagar.stockagent.agent.MarketDataAgent;
-import info.saagar.stockagent.logging.ToolExecutionLogger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -65,19 +64,16 @@ public class MarketDataAgentConfig {
   /// @param marketDataChatModel chat model used by the agent
   /// @param marketDataToolProvider the MCP tools on the agent's allowlist
   /// @param agentProperties per-agent settings
-  /// @param toolExecutionLogger logs each tool call the agent makes
   /// @return the Market data agent
   @Bean
   public MarketDataAgent marketDataAgent(
       ChatModel marketDataChatModel,
       ToolProvider marketDataToolProvider,
-      AgentProperties agentProperties,
-      ToolExecutionLogger toolExecutionLogger) {
-    return AiServices.builder(MarketDataAgent.class)
+      AgentProperties agentProperties) {
+    return AgenticServices.agentBuilder(MarketDataAgent.class)
         .chatModel(marketDataChatModel)
         .toolProvider(marketDataToolProvider)
         .toolExecutionErrorHandler(ToolExecutionErrorHandler.sendExceptionMessageToLlm())
-        .afterToolExecution(toolExecutionLogger)
         .maxSequentialToolsInvocations(agentProperties.forAgent(MARKET_DATA_AGENT_NAME).maxSteps())
         .build();
   }

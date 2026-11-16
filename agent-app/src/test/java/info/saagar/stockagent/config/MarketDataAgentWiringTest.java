@@ -13,18 +13,14 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.request.json.JsonObjectSchema;
 import dev.langchain4j.model.chat.response.ChatResponse;
-import dev.langchain4j.service.Result;
-import dev.langchain4j.service.tool.ToolExecution;
 import dev.langchain4j.service.tool.ToolProvider;
 import dev.langchain4j.service.tool.ToolProviderResult;
 import info.saagar.stockagent.agent.MarketDataAgent;
-import info.saagar.stockagent.logging.ToolExecutionLogger;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
-import tools.jackson.databind.json.JsonMapper;
 
 /// Drives the Market data agent built by [MarketDataAgentConfig] with a scripted model and an
 /// in-memory tool provider standing in for the MCP server.
@@ -97,39 +93,26 @@ class MarketDataAgentWiringTest {
 
   private static MarketDataAgent marketDataAgent(ChatModel chatModel) {
     return new MarketDataAgentConfig()
-        .marketDataAgent(
-            chatModel,
-            FAKE_MARKET_DATA_TOOLS,
-            AGENT_PROPERTIES,
-            new ToolExecutionLogger(JsonMapper.builder().build()));
+        .marketDataAgent(chatModel, FAKE_MARKET_DATA_TOOLS, AGENT_PROPERTIES);
   }
 
   @Test
   void callsGetQuoteAndAnswersFromItsResult() {
     RecordingQuoteChatModel chatModel = new RecordingQuoteChatModel("AAPL");
 
-    Result<String> agentResult = marketDataAgent(chatModel).answer("price of Apple");
+    String answer = marketDataAgent(chatModel).answer("price of Apple");
 
-    assertThat(agentResult.content()).isEqualTo("Tool said: " + AAPL_QUOTE_JSON);
-    assertThat(agentResult.toolExecutions())
-        .singleElement()
-        .satisfies(
-            toolExecution -> {
-              assertThat(toolExecution.request().name()).isEqualTo("getQuote");
-              assertThat(toolExecution.hasFailed()).isFalse();
-            });
+    assertThat(chatModel.toolResultTextsSeen).containsExactly(AAPL_QUOTE_JSON);
+    assertThat(answer).isEqualTo("Tool said: " + AAPL_QUOTE_JSON);
   }
 
   @Test
   void toolErrorTextIsSentToTheModel() {
     RecordingQuoteChatModel chatModel = new RecordingQuoteChatModel("XYZ");
 
-    Result<String> agentResult = marketDataAgent(chatModel).answer("price of Zorblax");
+    String answer = marketDataAgent(chatModel).answer("price of Zorblax");
 
     assertThat(chatModel.toolResultTextsSeen).containsExactly(NO_QUOTE_MESSAGE);
-    assertThat(agentResult.content()).isEqualTo("Tool said: " + NO_QUOTE_MESSAGE);
-    assertThat(agentResult.toolExecutions())
-        .extracting(ToolExecution::hasFailed)
-        .containsExactly(true);
+    assertThat(answer).isEqualTo("Tool said: " + NO_QUOTE_MESSAGE);
   }
 }

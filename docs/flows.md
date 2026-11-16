@@ -47,7 +47,7 @@ Open: how starting holdings get in ([OD-3](open-decisions.md)).
 
 ## Morning brief
 
-1. On weekdays before market open, a scheduled job generates a brief for each user's holdings: overnight news, notable price moves, upcoming earnings, new filings and macro releases (FR-26). It authenticates with a WorkOS M2M token (FR-27).
+1. On weekdays before market open, a scheduled job generates a brief for each user's holdings: overnight news, notable price moves, upcoming earnings and new filings (FR-26). It authenticates with a WorkOS M2M token (FR-27).
 2. The brief is stored. Each step is idempotent, so a failed run can be retried without duplicates (FR-29).
 3. When the user signs in, the page fetches `GET /api/briefs/latest` and shows it in the "Latest morning brief" section (UI-3).
 4. The spec has no push channel such as email or a notification. The user sees the brief only once they open the app.

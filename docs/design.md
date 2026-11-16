@@ -15,6 +15,5 @@ Scope names are defined in spec requirement SEC-8. Every token is validated for 
 | `portfolio.write` | Propose paper trades: `proposePaperTrade` (creates a `PENDING` action only) | `portfolio-mcp` |
 | `marketdata.read` | All `market-data-mcp` tools | `market-data-mcp` |
 | `filings.read` | All `filings-mcp` tools | `filings-mcp` |
-| `macro.read` | All `macro-mcp` tools | `macro-mcp` |
 
 Scopes for the other agent app endpoints are undecided: see [OD-7](open-decisions.md).

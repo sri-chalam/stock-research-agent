@@ -1,14 +1,20 @@
 package info.saagar.stockagent.controller;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
+import dev.langchain4j.data.message.ChatMessage;
+import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import info.saagar.stockagent.config.FilingsAgentConfig;
+import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.controller.ChatController.ChatResponse;
 import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -28,10 +34,12 @@ import tools.jackson.databind.json.JsonMapper;
 class ChatControllerTest {
 
   private static final FakeMcpServer FAKE_MARKET_DATA_MCP = FakeMcpServer.start("getQuote");
+  private static final FakeMcpServer FAKE_FILINGS_MCP = FakeMcpServer.start("listFilings");
 
   @DynamicPropertySource
   static void pointAgentAtFakeMcpServer(DynamicPropertyRegistry propertyRegistry) {
     propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
+    propertyRegistry.add("stock-agent.mcp-servers.filings.url", FAKE_FILINGS_MCP::url);
   }
 
   @TestConfiguration
@@ -39,20 +47,28 @@ class ChatControllerTest {
     @Bean
     @Primary
     ChatModel scriptedChatModel() {
-      return new SwitchableQuoteChatModel();
+      return new PromptRoutedChatModel();
     }
   }
 
-  /// Delegates to a scripted model whose requested symbol is derived from the user's prompt.
-  static class SwitchableQuoteChatModel implements ChatModel {
+  /// Delegates to a scripted model chosen from the user's prompt: a revenue question goes to both
+  /// specialists, anything else to the Market data agent. Only user messages are matched, because
+  /// the planner's system message mentions revenue, and Zorblax asks for an unknown symbol.
+  static class PromptRoutedChatModel implements ChatModel {
     @Override
     public dev.langchain4j.model.chat.response.ChatResponse doChat(
         dev.langchain4j.model.chat.request.ChatRequest chatRequest) {
-      boolean asksAboutUnknownCompany =
+      String conversationText =
           chatRequest.messages().stream()
-              .anyMatch(message -> message.toString().contains("Zorblax"));
-      String symbolToRequest = asksAboutUnknownCompany ? "XYZ" : "AAPL";
-      return new ScriptedQuoteChatModel(symbolToRequest).doChat(chatRequest);
+              .filter(UserMessage.class::isInstance)
+              .map(ChatMessage::toString)
+              .collect(Collectors.joining());
+      String symbolToRequest = conversationText.contains("Zorblax") ? "XYZ" : "AAPL";
+      ScriptedAgentsChatModel scriptedModel =
+          conversationText.contains("revenue")
+              ? ScriptedAgentsChatModel.filingsThenMarketData(symbolToRequest)
+              : ScriptedAgentsChatModel.marketDataOnly(symbolToRequest);
+      return scriptedModel.doChat(chatRequest);
     }
   }
 
@@ -84,6 +100,8 @@ class ChatControllerTest {
         .singleElement()
         .satisfies(
             toolCall -> {
+              assertThat(toolCall.agentName())
+                  .isEqualTo(MarketDataAgentConfig.MARKET_DATA_AGENT_NAME);
               assertThat(toolCall.name()).isEqualTo("getQuote");
               assertThat(toolCall.arguments()).containsEntry("symbol", "AAPL");
             });
@@ -98,5 +116,17 @@ class ChatControllerTest {
     assertThat(response.toolsCalled())
         .extracting(ChatController.ToolCall::name)
         .containsExactly("getQuote");
+  }
+
+  @Test
+  void combinedQuestionRunsBothSpecialistsAndMergesTheirAnswers() throws Exception {
+    ChatResponse response = postChat("Apple's revenue for the last 3 fiscal years and its price");
+
+    assertThat(response.answer()).startsWith("Merged: ").contains(" | ");
+    assertThat(response.toolsCalled())
+        .extracting(ChatController.ToolCall::agentName, ChatController.ToolCall::name)
+        .containsExactly(
+            tuple(FilingsAgentConfig.FILINGS_AGENT_NAME, "listFilings"),
+            tuple(MarketDataAgentConfig.MARKET_DATA_AGENT_NAME, "getQuote"));
   }
 }

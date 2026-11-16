@@ -1,0 +1,99 @@
+package info.saagar.stockagent.config;
+
+import dev.langchain4j.agentic.AgenticServices;
+import dev.langchain4j.agentic.supervisor.SupervisorAgent;
+import dev.langchain4j.agentic.supervisor.SupervisorResponseStrategy;
+import dev.langchain4j.model.anthropic.AnthropicChatModel;
+import dev.langchain4j.model.chat.ChatModel;
+import info.saagar.stockagent.agent.FilingsAgent;
+import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.logging.AgentProvenanceListener;
+import info.saagar.stockagent.logging.ToolExecutionLogger;
+import java.io.IOException;
+import java.nio.charset.StandardCharsets;
+import java.util.Map;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.context.properties.EnableConfigurationProperties;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Configuration;
+import org.springframework.core.io.ClassPathResource;
+
+/// Wires the Supervisor, which plans each request, delegates sub-questions to the specialist agents
+/// and merges their answers.
+@Configuration
+@EnableConfigurationProperties(AgentProperties.class)
+public class SupervisorAgentConfig {
+
+  private static final Logger log = LoggerFactory.getLogger(SupervisorAgentConfig.class);
+
+  /// Key of the Supervisor's settings in `application.yml`; also logged as its agent name.
+  public static final String SUPERVISOR_AGENT_NAME = "supervisor";
+
+  /// ID of the Supervisor's prompt version, taken from its filename and logged with every answer.
+  public static final String SUPERVISOR_PROMPT_ID = "supervisor-v1";
+
+  /// Builds the Claude chat model for the Supervisor's planner from its `application.yml` settings.
+  ///
+  /// @param agentProperties per-agent settings
+  /// @param anthropicApiKey API key from the `ANTHROPIC_API_KEY` environment variable
+  /// @return the chat model
+  @Bean
+  public ChatModel supervisorChatModel(
+      AgentProperties agentProperties, @Value("${ANTHROPIC_API_KEY}") String anthropicApiKey) {
+    AgentProperties.AgentSettings supervisorSettings =
+        agentProperties.forAgent(SUPERVISOR_AGENT_NAME);
+    return AnthropicChatModel.builder()
+        .apiKey(anthropicApiKey)
+        .modelName(supervisorSettings.model())
+        .maxTokens(supervisorSettings.maxTokens())
+        .timeout(supervisorSettings.timeout())
+        .build();
+  }
+
+  /// Builds the Supervisor over the Filings analyst and the Market data agent.
+  ///
+  /// It returns the planner's summary of the specialists' answers (`SUMMARY`), and `max-steps` caps
+  /// how many specialist invocations one run may make. Without chat memory, each request is a fresh
+  /// run.
+  ///
+  /// @param supervisorChatModel chat model the planner uses
+  /// @param filingsAgent the Filings analyst
+  /// @param marketDataAgent the Market data agent
+  /// @param agentProperties per-agent settings
+  /// @param agentProvenanceListener records which specialists and tools each run used
+  /// @param toolExecutionLogger logs each tool call the specialists make
+  /// @return the Supervisor
+  /// @throws IOException when the prompt resource cannot be read
+  @Bean
+  public SupervisorAgent supervisorAgent(
+      ChatModel supervisorChatModel,
+      FilingsAgent filingsAgent,
+      MarketDataAgent marketDataAgent,
+      AgentProperties agentProperties,
+      AgentProvenanceListener agentProvenanceListener,
+      ToolExecutionLogger toolExecutionLogger)
+      throws IOException {
+    String supervisorPrompt =
+        new ClassPathResource("prompts/" + SUPERVISOR_PROMPT_ID + ".txt")
+            .getContentAsString(StandardCharsets.UTF_8);
+    log.atDebug()
+        .addKeyValue("eventName", "supervisorPromptLoaded")
+        .addKeyValue(
+            "eventData",
+            Map.of(
+                "promptId", SUPERVISOR_PROMPT_ID, "promptLengthChars", supervisorPrompt.length()))
+        .log("Supervisor prompt loaded");
+    return AgenticServices.supervisorBuilder()
+        .name(SUPERVISOR_AGENT_NAME)
+        .chatModel(supervisorChatModel)
+        .subAgents(filingsAgent, marketDataAgent)
+        .responseStrategy(SupervisorResponseStrategy.SUMMARY)
+        .supervisorContext(supervisorPrompt)
+        .maxAgentsInvocations(agentProperties.forAgent(SUPERVISOR_AGENT_NAME).maxSteps())
+        .listener(agentProvenanceListener)
+        .listener(toolExecutionLogger)
+        .build();
+  }
+}

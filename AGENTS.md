@@ -18,7 +18,9 @@
 
 ## 1. Project Overview
 
-Equity Research & Portfolio Watch: a multi-agent AI assistant for individual investors, built in Java with Spring Boot, LangChain4j and MCP tool servers. It answers research questions (market data, news, SEC filings via RAG, macro data), analyzes paper-portfolio risk, produces a scheduled morning brief, and proposes paper trades that require explicit user approval. It is a research and monitoring tool only: no real trading, no personalized investment advice.
+Equity Research & Portfolio Watch: a multi-agent AI assistant for individual investors, built in Java with Spring Boot, LangChain4j and MCP tool servers. It answers research questions (market data, news, SEC filings via RAG), analyzes paper-portfolio risk, produces a scheduled morning brief, and proposes paper trades that require explicit user approval. It is a research and monitoring tool only: no real trading, no personalized investment advice.
+
+**Project intent:** This project exists to explore agentic-application concepts (agents, MCP, gateways, RAG, evals, auth). Keep data-provider integrations (Finnhub, SEC EDGAR) as thin as possible: fixed, small tool outputs over flexible parameters, and no provider edge cases unless an eval demands it. When a design choice adds provider complexity without teaching an agentic concept, pick the simpler option.
 
 Full requirements: @docs/requirements/stock-research-agent-spec.md
 
@@ -37,7 +39,7 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 | Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache, session state) |
 | Logging | SLF4J 2 + Logback |
 | Testing | JUnit Jupiter + AssertJ; versions managed by the Spring Boot BOM where available |
-| Container | Amazon Corretto 25 Alpine |
+| Container | jlink runtimes built from Amazon Corretto 25 (ADR 0012): `alpine:latest` for `agent-app` and `market-data-mcp`; `amazonlinux:2023` for `filings-mcp`, because ONNX Runtime needs glibc |
 
 ## 3. Project Structure
 
@@ -47,6 +49,7 @@ Multi-module Gradle build. Shared build logic lives in `buildSrc` convention plu
 |---|---|
 | `agent-app` | The agent app (REST API, agents, MCP clients). Port 8080 |
 | `market-data-mcp` | Market-data MCP server (Finnhub). Port 8081 |
+| `filings-mcp` | SEC filings MCP server (EDGAR). Port 8082. Same package layout as `market-data-mcp`, under `info.saagar.stockagent.filings` |
 | `common` | Code shared by more than one module. A plain library, not an app |
 
 Each app's `application.yml` holds only its own settings and imports `classpath:common.yml` (from `common`) for shared settings: structured logging and virtual threads. Do not put one app's settings in another app's file or in `common.yml`.
@@ -61,7 +64,7 @@ Package by layer under `info.saagar.stockagent`:
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`) |
 | `tool` | Tool-call helpers (`ToolArguments`). agent-app has no `@Tool` classes: tools come from MCP servers |
 | `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`) |
-| `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `McpCorrelationHeaders`) |
+| `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
 
@@ -73,6 +76,18 @@ Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpAppli
 | `tool` | LangChain4j `@Tool` classes served over MCP and their helpers (`MarketDataTools`, `TickerSymbols`) |
 | `provider` | Finnhub client interface, implementation and result records (`FinnhubClient`, `RestClientFinnhubClient`, `Quote`, `MarketDataException`) |
 | `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`) |
+
+### `filings-mcp`
+
+Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication`, which also scans `info.saagar.stockagent.common`).
+
+| Package | Contents |
+|---|---|
+| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) |
+| `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`, `FilingChunk`) |
+| `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store) |
+| `rag` | Filings RAG ingestion: startup ingestion on a virtual thread, section extraction and chunk metadata keys (`FilingIngestion`, `FilingSections`, `FilingChunkMetadata`) |
 
 ### `common`
 
@@ -93,6 +108,7 @@ Under `info.saagar.stockagent.common`, organised by package:
 ./gradlew clean build  # full clean build
 ./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
 ./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
+./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
 ```
 
 ## 5. Code Style

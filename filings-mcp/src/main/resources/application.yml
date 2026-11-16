@@ -1,0 +1,58 @@
+spring:
+  application:
+    name: filings-mcp
+  config:
+    import: classpath:common.yml
+
+server:
+  port: 8082
+  address: 127.0.0.1
+
+# Only /actuator/health is exposed; Docker Compose uses it as the healthcheck.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+
+# SEC EDGAR APIs. The User-Agent comes from the SEC_USER_AGENT environment variable (e.g.
+# "stock-research-agent you@example.com"); startup fails without it.
+filings:
+  base-url: https://data.sec.gov
+  connect-timeout: 2s
+  read-timeout: 5s
+  # The only tickers filings-mcp serves, mapped to their 10-digit SEC CIK. Looked up once from
+  # https://www.sec.gov/files/company_tickers.json; nothing is downloaded at runtime. Quoted so
+  # the leading zeros are kept.
+  tickers:
+    AAPL: "0000320193"
+    MSFT: "0000789019"
+    NVDA: "0001045810"
+    AMZN: "0001018724"
+    GOOGL: "0001652044"
+    META: "0001326801"
+    TSLA: "0001318605"
+    JPM: "0000019617"
+    # company_tickers.json maps XOM to its new holding company (0002115436), which has filed no
+    # 10-K yet. Exxon Mobil Corp's 10-Ks and 10-Qs are under this CIK.
+    XOM: "0000034088"
+    NFLX: "0001065280"
+  # RAG over filings: ingestion on startup, chunk store and searchFilings.
+  rag:
+    # pgvector (Postgres, see docker-compose.yml) or in-memory (empty on every start; for tests).
+    vector-store: pgvector
+    # Tickers whose latest 10-K Item 1A is ingested on startup; each must be in filings.tickers.
+    ingest-tickers:
+      - AAPL
+    # In characters: about 400 tokens with about 50 of overlap. bge-small-en-v1.5 reads at most
+    # 512 tokens per chunk and silently drops the rest.
+    chunk-size-chars: 1600
+    chunk-overlap-chars: 200
+    search-max-results: 5
+    # The password comes from the FILINGS_DB_PASSWORD environment variable.
+    database:
+      host: ${FILINGS_DB_HOST:localhost}
+      port: ${FILINGS_DB_PORT:5432}
+      name: ${FILINGS_DB_NAME:stockagent}
+      user: ${FILINGS_DB_USER:filings_mcp}
+      table: filings.filing_chunks
