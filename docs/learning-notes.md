@@ -56,6 +56,18 @@ ChatController → agent.chat(prompt)                        (AiServices proxy)
 - `McpController` routing: it answers `ping` itself, wraps `tools/call` in `handleToolCall` (logging), and passes everything else to `McpServer.handle`.
 - `McpServer.handle` switches on `method`: `initialize` → `handleInitialize`, `tools/list` → `handleListTools`, `tools/call` → `handleCallTool` (invokes the `@Tool` method), anything else → "Method not found" error. A message with no numeric `id` returns `null`, so the controller replies `202 Accepted`.
 
+## Agents (langchain4j-agentic)
+
+- `AgenticServices.agentBuilder` has no `afterToolExecution` hook, which `AiServices` has. To observe tool calls, implement `AgentListener` (`afterAgentToolExecution`) instead.
+- Attach each listener once, on the Supervisor. If its `inheritedBySubagents()` returns `true`, it also gets every specialist's agent and tool events, so you don't register it on each specialist. `ToolExecutionLogger` (logs `toolExecuted`) and `AgentProvenanceListener` (records the agents and tools for `answerProvenance`) work this way.
+- In `beforeAgentInvocation`, `agent.parent() == null` means the Supervisor itself. Any other agent is a specialist.
+- Each run gets a fresh agentic scope with a random `memoryId`. `AgentProvenanceListener` keys each run's records by it.
+- The Supervisor calls specialists one at a time. Its planner picks one agent, reads that agent's answer, then picks the next one or finishes. A filings question and a quote question don't depend on each other, so they could run in parallel. That would need a parallel agent, which always calls every agent it holds.
+- `supervisorAgent.invokeWithAgenticScope(...)` runs the whole flow: planning, specialist calls and tool calls. It returns a `ResultWithAgenticScope`:
+  - `result()`: the final answer.
+  - `agenticScope()`: the run's shared context. It holds the run's `memoryId` and the values agents read and write (for example, the `request` the planner hands a specialist).
+- In `ChatController`, the code after `invokeWithAgenticScope` calls no agents. It only reads what the listener recorded and builds the `toolsCalled` list for the response.
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.

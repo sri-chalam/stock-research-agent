@@ -12,6 +12,13 @@ server:
 # ANTHROPIC_API_KEY environment variable.
 stock-agent:
   agents:
+    # Plans each request, delegates sub-questions to the specialist agents below and merges their
+    # answers. max-steps caps the specialist invocations per request.
+    supervisor:
+      model: claude-haiku-5-5
+      max-tokens: 1024
+      timeout: 30s
+      max-steps: 4
     market-data:
       model: claude-haiku-5-5
       max-tokens: 1024
@@ -25,7 +32,7 @@ stock-agent:
         - getMarketNews
         - getEarningsCalendar
         - getBasicFinancials
-    # The Filings analyst, reached through POST /api/filings/chat until the Supervisor arrives.
+    # The Filings analyst.
     filings:
       model: claude-haiku-5-5
       max-tokens: 1024

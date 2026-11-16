@@ -30,3 +30,5 @@
 - [ ] No specialist calls a tool outside its allowlist.
 
 ## Comments
+
+- **2026-11-16, planner-format tests kept.** `ChatControllerTest` and `ChatLoggingTest` drive the real `supervisorBuilder` through `ScriptedAgentsChatModel`, a fake model that reads the beta `SupervisorPlanner` prompt format. They are the only end-to-end check that the `AgentListener` reaches the specialist agents. This differs from ticket 02's rule for its own tests. A `langchain4j-agentic` upgrade that changes the planner prompt will break these 8 tests together; update the fake when that happens.

@@ -1,10 +1,15 @@
 package info.saagar.stockagent.controller;
 
-import dev.langchain4j.model.output.TokenUsage;
-import dev.langchain4j.service.Result;
+import dev.langchain4j.agentic.scope.ResultWithAgenticScope;
+import dev.langchain4j.agentic.supervisor.SupervisorAgent;
 import dev.langchain4j.service.tool.ToolExecution;
+import info.saagar.stockagent.agent.FilingsAgent;
 import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
+import info.saagar.stockagent.config.SupervisorAgentConfig;
+import info.saagar.stockagent.logging.AgentProvenanceListener;
+import info.saagar.stockagent.logging.AgentProvenanceListener.AgentCall;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -19,22 +24,34 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Synchronous chat endpoint backed by the Market data agent.
+/// Synchronous chat endpoint backed by the Supervisor, which delegates to the specialist agents.
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
 
   private static final Logger log = LoggerFactory.getLogger(ChatController.class);
 
-  private final MarketDataAgent marketDataAgent;
+  /// Prompt version of each specialist agent, logged per agent call (AG-1).
+  private static final Map<String, String> PROMPT_ID_BY_AGENT_NAME =
+      Map.of(
+          FilingsAgentConfig.FILINGS_AGENT_NAME, FilingsAgent.PROMPT_ID,
+          MarketDataAgentConfig.MARKET_DATA_AGENT_NAME, MarketDataAgent.PROMPT_ID);
+
+  private final SupervisorAgent supervisorAgent;
+  private final AgentProvenanceListener agentProvenanceListener;
   private final JsonMapper jsonMapper;
 
   /// Creates the controller.
   ///
-  /// @param marketDataAgent agent that answers prompts
+  /// @param supervisorAgent agent that answers prompts through the specialist agents
+  /// @param agentProvenanceListener records which specialists and tools each run used
   /// @param jsonMapper mapper used to parse tool-call arguments
-  public ChatController(MarketDataAgent marketDataAgent, JsonMapper jsonMapper) {
-    this.marketDataAgent = marketDataAgent;
+  public ChatController(
+      SupervisorAgent supervisorAgent,
+      AgentProvenanceListener agentProvenanceListener,
+      JsonMapper jsonMapper) {
+    this.supervisorAgent = supervisorAgent;
+    this.agentProvenanceListener = agentProvenanceListener;
     this.jsonMapper = jsonMapper;
   }
 
@@ -43,73 +60,68 @@ public class ChatController {
   /// @param message the question to answer
   public record ChatRequest(@NotBlank String message) {}
 
-  /// A tool the agent called while answering.
+  /// A tool a specialist agent called while answering.
   ///
+  /// @param agentName the specialist agent that made the call, e.g. `market-data`
   /// @param name tool name
   /// @param arguments arguments the model passed to the tool
-  public record ToolCall(String name, Map<String, Object> arguments) {}
+  public record ToolCall(String agentName, String name, Map<String, Object> arguments) {}
 
-  /// The agent's answer and the tools that produced it.
+  /// The answer and the tools that produced it.
   ///
   /// @param answer answer text
   /// @param toolsCalled tools called, in order
   public record ChatResponse(String answer, List<ToolCall> toolsCalled) {}
 
-  /// Answers a prompt with the Market data agent.
+  /// Answers a prompt with the Supervisor.
   ///
   /// @param chatRequest the user's prompt
   /// @return the answer and the tools called
   @PostMapping
   public ChatResponse chat(@Valid @RequestBody ChatRequest chatRequest) {
     long startNanos = System.nanoTime();
-    Result<String> agentResult = marketDataAgent.answer(chatRequest.message());
-    return toChatResponse(
-        jsonMapper,
-        MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
-        MarketDataAgent.PROMPT_ID,
-        agentResult,
-        startNanos);
-  }
-
-  /// Builds the response from an agent's result and logs its `answerProvenance` line.
-  ///
-  /// Shared with [FilingsChatController] so both endpoints log the same event.
-  static ChatResponse toChatResponse(
-      JsonMapper jsonMapper,
-      String agentName,
-      String promptId,
-      Result<String> agentResult,
-      long startNanos) {
+    ResultWithAgenticScope<String> supervisorResult =
+        supervisorAgent.invokeWithAgenticScope(chatRequest.message());
+    List<AgentCall> agentCalls =
+        agentProvenanceListener.takeAgentCalls(supervisorResult.agenticScope());
     List<ToolCall> toolsCalled =
-        agentResult.toolExecutions().stream()
-            .map(toolExecution -> toToolCall(jsonMapper, toolExecution))
+        agentCalls.stream()
+            .flatMap(
+                agentCall ->
+                    agentCall.toolExecutions().stream()
+                        .map(toolExecution -> toToolCall(agentCall.agentName(), toolExecution)))
             .toList();
-    logAnswerProvenance(agentName, promptId, agentResult, toolsCalled, startNanos);
-    return new ChatResponse(agentResult.content(), toolsCalled);
+    logAnswerProvenance(agentCalls, startNanos);
+    return new ChatResponse(supervisorResult.result(), toolsCalled);
   }
 
-  private static ToolCall toToolCall(JsonMapper jsonMapper, ToolExecution toolExecution) {
+  private ToolCall toToolCall(String agentName, ToolExecution toolExecution) {
     return new ToolCall(
+        agentName,
         toolExecution.request().name(),
         ToolArguments.parse(jsonMapper, toolExecution.request().arguments()));
   }
 
-  /// Logs the one `answerProvenance` line that says which agent, prompt and tools made the answer.
-  private static void logAnswerProvenance(
-      String agentName,
-      String promptId,
-      Result<String> agentResult,
-      List<ToolCall> toolsCalled,
-      long startNanos) {
-    TokenUsage tokenUsage = agentResult.tokenUsage();
+  /// Logs the one `answerProvenance` line that says which agents, prompt and tools made the answer.
+  private static void logAnswerProvenance(List<AgentCall> agentCalls, long startNanos) {
+    List<Map<String, Object>> agentsUsed =
+        agentCalls.stream()
+            .map(
+                agentCall ->
+                    Map.<String, Object>of(
+                        "agentName",
+                        agentCall.agentName(),
+                        "promptId",
+                        PROMPT_ID_BY_AGENT_NAME.get(agentCall.agentName()),
+                        "toolsUsed",
+                        agentCall.toolExecutions().stream()
+                            .map(toolExecution -> toolExecution.request().name())
+                            .toList()))
+            .toList();
     Map<String, Object> provenanceData = new LinkedHashMap<>();
-    provenanceData.put("agentName", agentName);
-    provenanceData.put("promptId", promptId);
-    provenanceData.put("toolsUsed", toolsCalled.stream().map(ToolCall::name).toList());
-    provenanceData.put("inputTokenCount", tokenUsage == null ? null : tokenUsage.inputTokenCount());
-    provenanceData.put(
-        "outputTokenCount", tokenUsage == null ? null : tokenUsage.outputTokenCount());
-    provenanceData.put("totalTokenCount", tokenUsage == null ? null : tokenUsage.totalTokenCount());
+    provenanceData.put("agentName", SupervisorAgentConfig.SUPERVISOR_AGENT_NAME);
+    provenanceData.put("promptId", SupervisorAgentConfig.SUPERVISOR_PROMPT_ID);
+    provenanceData.put("agentsUsed", agentsUsed);
     provenanceData.put("completeExecDurationTimeMs", (System.nanoTime() - startNanos) / 1_000_000);
     log.atInfo()
         .addKeyValue("eventName", "answerProvenance")

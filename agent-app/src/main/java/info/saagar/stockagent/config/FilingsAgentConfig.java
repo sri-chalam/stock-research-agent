@@ -1,14 +1,13 @@
 package info.saagar.stockagent.config;
 
+import dev.langchain4j.agentic.AgenticServices;
 import dev.langchain4j.mcp.McpToolProvider;
 import dev.langchain4j.mcp.client.McpClient;
 import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
-import dev.langchain4j.service.AiServices;
 import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
 import dev.langchain4j.service.tool.ToolProvider;
 import info.saagar.stockagent.agent.FilingsAgent;
-import info.saagar.stockagent.logging.ToolExecutionLogger;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -62,19 +61,16 @@ public class FilingsAgentConfig {
   /// @param filingsChatModel chat model used by the agent
   /// @param filingsToolProvider the MCP tools on the agent's allowlist
   /// @param agentProperties per-agent settings
-  /// @param toolExecutionLogger logs each tool call the agent makes
   /// @return the Filings analyst
   @Bean
   public FilingsAgent filingsAgent(
       ChatModel filingsChatModel,
       ToolProvider filingsToolProvider,
-      AgentProperties agentProperties,
-      ToolExecutionLogger toolExecutionLogger) {
-    return AiServices.builder(FilingsAgent.class)
+      AgentProperties agentProperties) {
+    return AgenticServices.agentBuilder(FilingsAgent.class)
         .chatModel(filingsChatModel)
         .toolProvider(filingsToolProvider)
         .toolExecutionErrorHandler(ToolExecutionErrorHandler.sendExceptionMessageToLlm())
-        .afterToolExecution(toolExecutionLogger)
         .maxSequentialToolsInvocations(agentProperties.forAgent(FILINGS_AGENT_NAME).maxSteps())
         .build();
   }

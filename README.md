@@ -16,7 +16,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 
 | # | Area | What to explore | Status |
 |---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Market data agent and Filings analyst, each standalone |
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
 | 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
@@ -73,7 +73,7 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 
 | App | Port | Endpoint | Status |
 |---|---|---|---|
-| `agent-app` | 8080 | `/api/chat`, `/api/filings/chat` | Built |
+| `agent-app` | 8080 | `/api/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
 | `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
@@ -81,17 +81,17 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 
 ## Run locally
 
-Three apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Market data agent (Claude Haiku 5.5). The agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
+Three apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Supervisor (Claude Haiku 5.5), which sends each part of the question to a specialist agent and merges their answers. The Market data agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
 
 ```
-curl → agent-app :8080 (/api/chat, Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
+curl → agent-app :8080 (/api/chat, Supervisor → Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
 ```
 
-The Filings analyst (`POST /api/filings/chat`) works the same way with `filings-mcp`, which reads SEC EDGAR. It has three tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years, and `searchFilings` returns the 5 filing chunks most similar to a query (RAG). On startup, `filings-mcp` ingests the latest 10-K Item 1A (Risk Factors) of the tickers in `filings.rag.ingest-tickers` into Postgres + pgvector, in the background, with an in-process embedding model. `searchFilings` reads only that store and never calls EDGAR. All tools support only 10 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`). Iteration 3 replaces this endpoint with the Supervisor:
+The Filings analyst works the same way with `filings-mcp`, which reads SEC EDGAR. It has three tools: `listFilings` returns the 10 most recent 10-K, 10-Q or 8-K filings, `getCompanyFacts` returns six headline XBRL metrics for the last 3 fiscal years, and `searchFilings` returns the 5 filing chunks most similar to a query (RAG). On startup, `filings-mcp` ingests the latest 10-K Item 1A (Risk Factors) of the tickers in `filings.rag.ingest-tickers` into Postgres + pgvector, in the background, with an in-process embedding model. `searchFilings` reads only that store and never calls EDGAR. All tools support only 10 configured large US companies (`filings.tickers` in `filings-mcp/src/main/resources/application.yml`):
 
 ```
-curl → agent-app :8080 (/api/filings/chat, Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
-                                                                                                  └─ searchFilings → Postgres + pgvector (filings schema)
+curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP client → filings-mcp :8082 (/mcp, filings tools) → SEC EDGAR
+                                                                                                       └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
 ### 1. Set environment variables
@@ -177,7 +177,7 @@ Each prompt is grouped under the tool the agent is expected to call. The model p
 # Company name resolved to a ticker
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"What is the stock price of Apple?"}'
-# {"answer":"...","toolsCalled":[{"name":"getQuote","arguments":{"symbol":"AAPL"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getQuote","arguments":{"symbol":"AAPL"}}]}
 
 # Price move for the day
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
@@ -189,7 +189,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"Get Atlassian Company profile info. Stock symbol TEAM"}'
-# {"answer":"...","toolsCalled":[{"name":"getCompanyProfile","arguments":{"symbol":"TEAM"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getCompanyProfile","arguments":{"symbol":"TEAM"}}]}
 ```
 
 **`getCompanyNews`**: the 10 most recent articles about one company. The range is at most 30 days; with no dates it is the last 7 days.
@@ -197,7 +197,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"Summarize the last week of news about MSFT."}'
-# {"answer":"...","toolsCalled":[{"name":"getCompanyNews","arguments":{"symbol":"MSFT"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getCompanyNews","arguments":{"symbol":"MSFT"}}]}
 ```
 
 **`getMarketNews`**: the 10 most recent market-wide articles. Category is `general` or `merger`.
@@ -205,7 +205,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"What are the latest merger and acquisition headlines?"}'
-# {"answer":"...","toolsCalled":[{"name":"getMarketNews","arguments":{"category":"merger"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getMarketNews","arguments":{"category":"merger"}}]}
 ```
 
 **`getEarningsCalendar`**: earnings dates with EPS and revenue estimates and actuals. Without a symbol, the range is at most 7 days and at most 25 rows are returned.
@@ -225,7 +225,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 ```bash
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"What are the P/E ratio, net margin and dividend yield for Coca-Cola?"}'
-# {"answer":"...","toolsCalled":[{"name":"getBasicFinancials","arguments":{"symbol":"KO"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getBasicFinancials","arguments":{"symbol":"KO"}}]}
 ```
 
 **Several tools in one question**
@@ -250,24 +250,24 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 
 Data is live from Finnhub, so answers vary. Only US-listed equities are supported.
 
-**`listFilings`** (Filings analyst, `/api/filings/chat`): the 10 most recent filings of one form type, with sec.gov links.
+**`listFilings`** (Filings analyst): the 10 most recent filings of one form type, with sec.gov links.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"List Microsoft'\''s recent 10-K filings"}'
-# {"answer":"...","toolsCalled":[{"name":"listFilings","arguments":{"ticker":"MSFT","formType":"10-K"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"filings","name":"listFilings","arguments":{"ticker":"MSFT","formType":"10-K"}}]}
 
 # Unconfigured ticker: the error lists the supported tickers
-curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"List IBM'\''s recent 10-Q filings"}'
 ```
 
 **`getCompanyFacts`** (Filings analyst): revenue, net income, gross profit, diluted EPS, total assets and cash for the last 3 fiscal years, from XBRL. Each value cites its form, period and accession number.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/filings/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"What was Apple'\''s revenue for the last 3 fiscal years?"}'
-# {"answer":"...","toolsCalled":[{"name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
+# {"answer":"...","toolsCalled":[{"agentName":"filings","name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
 ```
 
 ### 4. Call the MCP tools directly (optional)

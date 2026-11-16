@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import dev.langchain4j.model.chat.ChatModel;
 import info.saagar.stockagent.agent.MarketDataAgent;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
+import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -62,7 +63,8 @@ class ChatLoggingTest {
     }
   }
 
-  /// Throws for the failing prompt; otherwise asks for `getQuote(AAPL)` and relays the result.
+  /// Throws for the failing prompt; otherwise routes to the Market data agent, which asks for
+  /// `getQuote(AAPL)` and relays the result.
   static class FailableQuoteChatModel implements ChatModel {
     @Override
     public dev.langchain4j.model.chat.response.ChatResponse doChat(
@@ -73,7 +75,7 @@ class ChatLoggingTest {
       if (asksToFail) {
         throw new IllegalStateException(FORCED_FAILURE_MESSAGE);
       }
-      return new ScriptedQuoteChatModel("AAPL").doChat(chatRequest);
+      return ScriptedAgentsChatModel.marketDataOnly("AAPL").doChat(chatRequest);
     }
   }
 
@@ -145,6 +147,7 @@ class ChatLoggingTest {
 
     Map<String, Object> toolExecutedData = eventData(singleEvent(logLines, "toolExecuted"));
     assertThat(toolExecutedData)
+        .containsEntry("agentName", MarketDataAgentConfig.MARKET_DATA_AGENT_NAME)
         .containsEntry("toolName", "getQuote")
         .containsEntry("toolArguments", Map.of("symbol", "AAPL"))
         .containsEntry("toolFailed", false);
@@ -153,12 +156,18 @@ class ChatLoggingTest {
     Map<String, Object> answerProvenance = singleEvent(logLines, "answerProvenance");
     assertThat((String) answerProvenance.get("traceId")).matches(UUID_PATTERN);
     assertThat(eventData(answerProvenance))
-        .containsEntry("agentName", MarketDataAgentConfig.MARKET_DATA_AGENT_NAME)
-        .containsEntry("promptId", MarketDataAgent.PROMPT_ID)
-        .containsEntry("toolsUsed", List.of("getQuote"))
-        .containsEntry("inputTokenCount", 20)
-        .containsEntry("outputTokenCount", 10)
-        .containsEntry("totalTokenCount", 30);
+        .containsEntry("agentName", SupervisorAgentConfig.SUPERVISOR_AGENT_NAME)
+        .containsEntry("promptId", SupervisorAgentConfig.SUPERVISOR_PROMPT_ID)
+        .containsEntry(
+            "agentsUsed",
+            List.of(
+                Map.of(
+                    "agentName",
+                    MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
+                    "promptId",
+                    MarketDataAgent.PROMPT_ID,
+                    "toolsUsed",
+                    List.of("getQuote"))));
     assertThat(eventData(answerProvenance).get("completeExecDurationTimeMs"))
         .isInstanceOf(Number.class);
   }
