@@ -31,6 +31,11 @@ _Avoid_: "real trading", "order execution"
 
 **Semantic cache**: A store of past answers to research questions, kept in Postgres + pgvector. It returns a stored answer when a new question is similar enough (cosine similarity, default threshold 0.92), so no agent or LLM runs. Matches are filtered by ticker, freshness class and, for portfolio questions, user, so one user never sees another user's answer. Cached answers are marked "cached". `REAL_TIME` answers and trade requests are never cached.
 
+**Specialist agent**: An agent that owns one domain and answers only with that domain's MCP tools, such as the Filings analyst or the Market data agent. It receives a sub-question from the Supervisor, not the user's original prompt.
+_Avoid_: "sub-agent", "worker"
+
+**Supervisor**: The agent that receives a research prompt, splits it into sub-questions, sends each to a specialist agent, and merges their answers into one. It calls no tools itself. A question that needs two domains, such as a company's revenue trend and its current price, goes to two specialist agents.
+
 **Watchlist**: A per-user list of tickers to follow. It holds no share quantities, unlike holdings. Stored in Postgres, read through `getWatchlist()` on `portfolio-mcp`, and updated by the user through `PUT /api/watchlist`. The user is identified from the access token, never from prompt text. Independent of holdings: a ticker can be on the watchlist without being held, and a held ticker need not be on the watchlist.
 
 **XBRL**: Structured financial data tagged inside SEC filings, read through the EDGAR `companyfacts` API. Numbers in answers prefer XBRL over text extracted from filings. It holds exact reported values, such as `Revenues`, `NetIncomeLoss` and `GrossProfit`, each with its period and source filing. It does not hold narrative text like Risk Factors or MD&A, which come from RAG.
