@@ -10,7 +10,7 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 
 This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
 
-> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 1b. Some goals may change or be dropped.
+> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 3. Some goals may change or be dropped.
 
 Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
 
@@ -18,9 +18,9 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 |---|---|---|---|
 | 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`). `portfolio-mcp` comes with Human-in-the-loop |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
-| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
+| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
 | 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
 | 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
 | 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
