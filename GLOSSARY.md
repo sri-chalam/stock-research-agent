@@ -2,6 +2,11 @@
 
 **Finnhub**: Third-party market data API. It supplies real-time US stock quotes, company news, company profiles and the earnings calendar to `market-data-mcp`. The free tier is US equities only (about 60 requests/min) and for personal use, with no redistribution. Its API key stays inside the MCP server and never reaches the agent or the LLM.
 
+**Freshness class**: How long an answer stays valid, which decides whether the semantic cache may store it. The intent classifier, a single Haiku call with structured output, assigns one of three values to each prompt:
+- `REAL_TIME`: prices and intraday moves. Never cached.
+- `DAILY`: news summaries and briefs. Cached until the end of the trading day.
+- `STATIC`: filing content and company descriptions. Cached for days or weeks, and cleared when the ticker has a new filing.
+
 **Holdings**: The stocks a user holds in their paper portfolio, as a ticker and the number of shares held (e.g., 50 shares of AAPL). Stored in Postgres and read through `getHoldings()` on `portfolio-mcp`. Holdings drive sector exposure and the Portfolio risk agent. Not the same as the watchlist, which follows tickers without owning them.
 
 **MCP server**: A Java service that exposes tools to agents over MCP; agents never call data providers directly. There are three, one per domain:
@@ -23,6 +28,8 @@ _Avoid_: "real trading", "order execution"
 - **10-K**: annual report, including Risk Factors and MD&A.
 - **10-Q**: quarterly report.
 - **8-K**: current report of a significant event, such as an earnings release, acquisition or executive change.
+
+**Semantic cache**: A store of past answers to research questions, kept in Postgres + pgvector. It returns a stored answer when a new question is similar enough (cosine similarity, default threshold 0.92), so no agent or LLM runs. Matches are filtered by ticker, freshness class and, for portfolio questions, user, so one user never sees another user's answer. Cached answers are marked "cached". `REAL_TIME` answers and trade requests are never cached.
 
 **Watchlist**: A per-user list of tickers to follow. It holds no share quantities, unlike holdings. Stored in Postgres, read through `getWatchlist()` on `portfolio-mcp`, and updated by the user through `PUT /api/watchlist`. The user is identified from the access token, never from prompt text. Independent of holdings: a ticker can be on the watchlist without being held, and a held ticker need not be on the watchlist.
 
