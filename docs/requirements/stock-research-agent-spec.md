@@ -5,7 +5,7 @@
 | **Repository** | `stock-research-agent` (private; may be made public later) |
 | **Owner** | Sri Chalam |
 | **Status** | Draft v1.0 — October 31, 2026 |
-| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
+| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals (deferred; no iteration assigned yet), resilience, observability, cost control and AWS deployment. |
 
 > **Suggested GitHub description:** Multi-agent stock research and portfolio assistant in Java. Built with LangChain4j, MCP tool servers, RAG over SEC filings, semantic caching, and Claude. Deployed on AWS ECS via CDK.
 >
@@ -400,6 +400,9 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-13a: Each run ends with one structured log line (`eventName` `answerProvenance`) listing the agents and tools that produced the answer, with the trace ID, so one query answers US-8.
 
 ### 12.4 Quality and evals
+
+> **Deferred:** NFR-14 to NFR-16 are deferred and have no iteration assigned. Iteration 3 is accepted by a manual check instead (Section 14).
+
 - NFR-14: Golden eval set: ~40 questions at Iteration 2, growing to 100+ (quotes, filings, news, portfolio, adversarial/injection, out-of-scope).
 - NFR-15: Graders: XBRL number checks, citation presence, trajectory checks (expected agents/tools, no forbidden tools), schema checks, LLM-as-judge with binary criteria for answer quality.
 - NFR-16: Evals run in CI on every prompt, model or tool change; merge blocked below threshold.
@@ -451,7 +454,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2a** | Log search | Local: Loki (no volume), Grafana Alloy and Grafana start with plain `docker compose up`; Alloy reads every container's stdout through the Docker socket and sets labels `service` (compose service name) and `level` (JSON apps only); Grafana with anonymous Admin on `127.0.0.1:3000` and a file-provisioned Loki data source; agent-app's `spring.application.name` renamed to `agent-app`. AWS: CloudWatch Logs through `awslogs` (built in 2b). See ADR 0011 | In Grafana Explore, `{service="filings-mcp"} \| json \| level="INFO" \|= "text"` returns matching lines; filtering on `correlationId` shows one request across all three apps; `{service="postgres"}` shows Postgres lines |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; a CloudWatch Logs Insights query filters one service's logs by level and text; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
-| **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
+| **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Manual check with three curl prompts (filings only, market data only, both): `answerProvenance` shows the Supervisor called the expected specialist agent(s), with tokens per agent (`tokensByAgent`) and run latency (`completeExecDurationTimeMs`) |
 | **3b–3d** | Add agents | News & sentiment → Portfolio risk → Critic | Each addition has eval cases; Critic catches seeded wrong numbers |
 | **4** | Semantic cache + model routing | Intent/freshness classifier; freshness-aware cache; per-agent model config; token/cost dashboard | Real-time questions never cached; cache hit rate and tokens saved visible; Haiku vs Sonnet decision documented with eval numbers |
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
