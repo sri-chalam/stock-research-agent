@@ -10,18 +10,18 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 
 This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
 
-> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 3. Some goals may change or be dropped.
+> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 4. Some goals may change or be dropped.
 
 Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
 
 | # | Area | What to explore | Status |
 |---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent, Filings analyst and Portfolio agent |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`). `portfolio-mcp` (`getHoldings`, `getWatchlist`) comes in Iteration 3b |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`); `portfolio-mcp` (`getHoldings`, `getWatchlist`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
-| 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ⏳ |
+| 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ✅ |
 | 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
 | 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
 | 9 | Guardrails | Prompt-injection checks, news and filing text treated as untrusted input, refusal of buy/sell advice | ⏳ |
@@ -32,8 +32,8 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 14 | Cost control | Prompt caching, token and cost per agent, Haiku vs Sonnet chosen per agent | ⏳ |
 | 15 | Chat GUI | One `index.html` with streamed answers (SSE) and an agent/tool trace panel | ⏳ |
 | 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
-| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs only |
-| 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ⏳ |
+| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs, Loki/Grafana log search |
+| 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
 | 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
 
 Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own.
@@ -330,6 +330,34 @@ curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/jso
   -d '{"message":"What do I hold?"}'
 ```
 
+**Semantic cache**: a `CACHEABLE` question gets an earlier answer back when a similar question named the same tickers within the TTL. `"cached"` in the response shows whether the answer came from the cache.
+
+```bash
+# Paraphrase: the first call runs the agents and stores the answer; the second is served from the cache
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What risks does Apple list in its latest 10-K?"}'
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are Apple'\''s 10-K risk factors?"}'
+# {"answer":"...","toolsCalled":[],"cached":true}
+
+# Different ticker set: a miss, so the agents run
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are Microsoft'\''s 10-K risk factors?"}'
+# "cached":false
+
+# REAL_TIME question: the cache is skipped every time
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Price of Apple"}'
+# "cached":false
+
+# Portfolio answer: never stored, so repeating it runs the agents again
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What stocks do I hold?"}'
+# "cached":false
+```
+
+In Grafana, `{service="agent-app"} | json | eventName=~"semanticCache.*"` shows each lookup's `cacheOutcome` (`HIT`, `MISS`, `SKIPPED`) and similarity, and why a store was skipped.
+
 ### 4. Call the MCP tools directly (optional)
 
 To check a tool's output without the agent or the model, send JSON-RPC to `market-data-mcp`. The server is stateless, so no `initialize` call is needed. JSON-RPC ids must be numbers.
@@ -362,7 +390,7 @@ curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
 
 ### Notes
 
-- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`, `stock-agent.agents.filings`).
+- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.supervisor`, `market-data`, `filings`, `portfolio`). The prompt classifier is configured under `stock-agent.classifier`, and the semantic cache (similarity threshold, TTL, store) under `stock-agent.semantic-cache`.
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
 - Tests use a scripted fake `ChatModel` and fake Finnhub and EDGAR clients; no live model, Finnhub or EDGAR call.
 
