@@ -9,7 +9,8 @@ import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.logging.AgentProvenanceListener;
-import info.saagar.stockagent.logging.AgentProvenanceListener.AgentCall;
+import info.saagar.stockagent.logging.RunProvenance;
+import info.saagar.stockagent.logging.RunProvenance.TokenCount;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
@@ -44,7 +45,7 @@ public class ChatController {
   /// Creates the controller.
   ///
   /// @param supervisorAgent agent that answers prompts through the specialist agents
-  /// @param agentProvenanceListener records which specialists and tools each run used
+  /// @param agentProvenanceListener records which specialists, tools and tokens each run used
   /// @param jsonMapper mapper used to parse tool-call arguments
   public ChatController(
       SupervisorAgent supervisorAgent,
@@ -82,16 +83,16 @@ public class ChatController {
     long startNanos = System.nanoTime();
     ResultWithAgenticScope<String> supervisorResult =
         supervisorAgent.invokeWithAgenticScope(chatRequest.message());
-    List<AgentCall> agentCalls =
-        agentProvenanceListener.takeAgentCalls(supervisorResult.agenticScope());
+    RunProvenance runProvenance =
+        agentProvenanceListener.takeRunProvenance(supervisorResult.agenticScope());
     List<ToolCall> toolsCalled =
-        agentCalls.stream()
+        runProvenance.agentCalls().stream()
             .flatMap(
                 agentCall ->
                     agentCall.toolExecutions().stream()
                         .map(toolExecution -> toToolCall(agentCall.agentName(), toolExecution)))
             .toList();
-    logAnswerProvenance(agentCalls, startNanos);
+    logAnswerProvenance(runProvenance, startNanos);
     return new ChatResponse(supervisorResult.result(), toolsCalled);
   }
 
@@ -102,10 +103,11 @@ public class ChatController {
         ToolArguments.parse(jsonMapper, toolExecution.request().arguments()));
   }
 
-  /// Logs the one `answerProvenance` line that says which agents, prompt and tools made the answer.
-  private static void logAnswerProvenance(List<AgentCall> agentCalls, long startNanos) {
+  /// Logs the one `answerProvenance` line that says which agents, prompts and tools made the answer
+  /// and how many tokens each agent used.
+  private static void logAnswerProvenance(RunProvenance runProvenance, long startNanos) {
     List<Map<String, Object>> agentsUsed =
-        agentCalls.stream()
+        runProvenance.agentCalls().stream()
             .map(
                 agentCall ->
                     Map.<String, Object>of(
@@ -118,14 +120,27 @@ public class ChatController {
                             .map(toolExecution -> toolExecution.request().name())
                             .toList()))
             .toList();
+    Map<String, Object> tokensByAgent = new LinkedHashMap<>();
+    runProvenance
+        .tokensByAgent()
+        .forEach((agentName, tokenCount) -> tokensByAgent.put(agentName, toLogData(tokenCount)));
+    TokenCount totalTokens = runProvenance.totalTokens();
     Map<String, Object> provenanceData = new LinkedHashMap<>();
     provenanceData.put("agentName", SupervisorAgentConfig.SUPERVISOR_AGENT_NAME);
     provenanceData.put("promptId", SupervisorAgentConfig.SUPERVISOR_PROMPT_ID);
     provenanceData.put("agentsUsed", agentsUsed);
+    provenanceData.put("tokensByAgent", tokensByAgent);
+    provenanceData.put("totalInputTokens", totalTokens.inputTokens());
+    provenanceData.put("totalOutputTokens", totalTokens.outputTokens());
     provenanceData.put("completeExecDurationTimeMs", (System.nanoTime() - startNanos) / 1_000_000);
     log.atInfo()
         .addKeyValue("eventName", "answerProvenance")
         .addKeyValue("eventData", provenanceData)
         .log("Answer provenance");
+  }
+
+  private static Map<String, Object> toLogData(TokenCount tokenCount) {
+    return Map.of(
+        "inputTokens", tokenCount.inputTokens(), "outputTokens", tokenCount.outputTokens());
   }
 }

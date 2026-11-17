@@ -11,6 +11,7 @@ import info.saagar.stockagent.logging.AgentProvenanceListener;
 import info.saagar.stockagent.logging.ToolExecutionLogger;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -38,10 +39,13 @@ public class SupervisorAgentConfig {
   ///
   /// @param agentProperties per-agent settings
   /// @param anthropicApiKey API key from the `ANTHROPIC_API_KEY` environment variable
+  /// @param agentProvenanceListener counts the model's tokens per run
   /// @return the chat model
   @Bean
   public ChatModel supervisorChatModel(
-      AgentProperties agentProperties, @Value("${ANTHROPIC_API_KEY}") String anthropicApiKey) {
+      AgentProperties agentProperties,
+      @Value("${ANTHROPIC_API_KEY}") String anthropicApiKey,
+      AgentProvenanceListener agentProvenanceListener) {
     AgentProperties.AgentSettings supervisorSettings =
         agentProperties.forAgent(SUPERVISOR_AGENT_NAME);
     return AnthropicChatModel.builder()
@@ -49,6 +53,7 @@ public class SupervisorAgentConfig {
         .modelName(supervisorSettings.model())
         .maxTokens(supervisorSettings.maxTokens())
         .timeout(supervisorSettings.timeout())
+        .listeners(List.of(agentProvenanceListener.tokenListener(SUPERVISOR_AGENT_NAME)))
         .build();
   }
 
