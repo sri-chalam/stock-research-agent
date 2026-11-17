@@ -14,6 +14,7 @@ services:
       # Local-dev defaults; override them in .env.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-dev}
       FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+      PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
     volumes:
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -58,6 +59,27 @@ services:
     healthcheck:
       # The filings-mcp image is Amazon Linux, which has curl but no wget.
       test: ["CMD", "curl", "-fsS", "-o", "/dev/null", "http://127.0.0.1:8082/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
+  portfolio-mcp:
+    build:
+      context: .
+      dockerfile: portfolio-mcp/Dockerfile
+    ports:
+      - "127.0.0.1:8084:8084"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      PORTFOLIO_DB_HOST: postgres
+      PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
+    # portfolio-mcp fails to start when Postgres is unreachable (schema.sql runs on startup).
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8084/actuator/health"]
       interval: 5s
       timeout: 3s
       retries: 12

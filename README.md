@@ -54,6 +54,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
 ./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
 ./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
+./gradlew :portfolio-mcp:bootRun    # start the portfolio MCP server (127.0.0.1:8084)
 ```
 
 ## Project layout
@@ -62,6 +63,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 agent-app/         agent app (info.saagar.stockagent)
 market-data-mcp/   market-data MCP server (info.saagar.stockagent.marketdata)
 filings-mcp/       SEC filings MCP server (info.saagar.stockagent.filings)
+portfolio-mcp/     portfolio MCP server (info.saagar.stockagent.portfolio)
 common/            code and config (common.yml) shared by the apps (info.saagar.stockagent.common)
 buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
@@ -76,7 +78,7 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `agent-app` | 8080 | `/api/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
-| `portfolio-mcp` | 8084 | `/mcp` | Planned (Iteration 3b) |
+| `portfolio-mcp` | 8084 | `/mcp` | Built (Iteration 3b); not yet called by `agent-app` |
 | Grafana (Compose only) | 3000 | `/explore` | Built (Iteration 2a) |
 
 ## Run locally
@@ -104,6 +106,7 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
 | `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
 | `FILINGS_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8082/mcp` |
 | `FILINGS_DB_PASSWORD` | `filings-mcp`, `postgres` | With Gradle, yes: the password of the `filings_mcp` database user. Compose defaults it to `filings-local-dev` |
+| `PORTFOLIO_DB_PASSWORD` | `portfolio-mcp`, `postgres` | With Gradle, yes: the password of the `portfolio_mcp` database user. Compose defaults it to `portfolio-local-dev` |
 | `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
@@ -130,11 +133,15 @@ export FILINGS_DB_PASSWORD=filings-local-dev
 # terminal 3 (after both MCP servers have started)
 export ANTHROPIC_API_KEY=...
 ./gradlew :agent-app:bootRun
+
+# optional, terminal 4: portfolio-mcp also needs the Compose Postgres
+export PORTFOLIO_DB_PASSWORD=portfolio-local-dev
+./gradlew :portfolio-mcp:bootRun
 ```
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
@@ -270,6 +277,30 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 # {"answer":"...","toolsCalled":[{"agentName":"filings","name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
 ```
 
+**`getHoldings`** (Portfolio agent): the user's holdings, ticker and shares. The user comes from the `X-User-Id` header (`alice` or `bob`), never from the prompt.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What stocks do I hold?"}'
+# {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getHoldings","arguments":{}}]}
+```
+
+**`getWatchlist`** (Portfolio agent): the tickers on the user's watchlist.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: bob' \
+  -d '{"message":"What'\''s on my watchlist?"}'
+# {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getWatchlist","arguments":{}}]}
+```
+
+**Both portfolio tools in one question**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What do I hold, and what is on my watchlist?"}'
+# toolsCalled includes getHoldings and getWatchlist
+```
+
 ### 4. Call the MCP tools directly (optional)
 
 To check a tool's output without the agent or the model, send JSON-RPC to `market-data-mcp`. The server is stateless, so no `initialize` call is needed. JSON-RPC ids must be numbers.
@@ -286,6 +317,18 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
 # A validation error comes back as a result with "isError": true
 curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"getMarketNews","arguments":{"category":"crypto"}}}'
+```
+
+`portfolio-mcp` serves `getHoldings` and `getWatchlist` for two seeded users, `alice` and `bob`. Neither tool takes arguments: the user comes from the `X-User-Id` header (replaced by the token's `sub` in Iteration 5). `schema.sql` and `data.sql` create and seed the tables on every start without duplicating rows.
+
+```bash
+# alice's holdings: [{"ticker":"AAPL","shares":50},...]; send bob for bob's
+curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"getHoldings","arguments":{}}}'
+
+# Without X-User-Id: "isError": true, "No user identified; send X-User-Id"
+curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"getWatchlist","arguments":{}}}'
 ```
 
 ### Notes

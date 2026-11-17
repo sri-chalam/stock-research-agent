@@ -12,6 +12,11 @@ spring-boot-starter-validation = { module = "org.springframework.boot:spring-boo
 spring-boot-starter-test = { module = "org.springframework.boot:spring-boot-starter-test" }
 # Connection pool for filings-mcp's pgvector store; version managed by the Spring Boot BOM.
 hikaricp = { module = "com.zaxxer:HikariCP" }
+# portfolio-mcp's store: JdbcClient over Postgres, H2 (PostgreSQL mode) in tests; versions managed by
+# the Spring Boot BOM.
+spring-boot-starter-jdbc = { module = "org.springframework.boot:spring-boot-starter-jdbc" }
+postgresql = { module = "org.postgresql:postgresql" }
+h2 = { module = "com.h2database:h2" }
 
 langchain4j-bom = { module = "dev.langchain4j:langchain4j-bom", version.ref = "langchain4j" }
 langchain4j = { module = "dev.langchain4j:langchain4j" }
