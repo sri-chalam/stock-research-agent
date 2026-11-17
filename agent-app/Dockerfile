@@ -18,24 +18,30 @@ RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
     ./gradlew :agent-app:build -x test --no-daemon --console=plain \
     && cp agent-app/build/libs/agent-app-*[!n].jar /workspace/app.jar
 
-# A minimal Java runtime from the JDK's jmods, musl-linked like the final image (ADR 0012).
-# The module list includes JMX, JFR, jcmd and the attach API for metrics, the OpenTelemetry agent
-# and debugging; ADR 0012 gives the reason for each module. It is the same list in both images.
-FROM amazoncorretto:25-alpine AS jre
+# A minimal Java runtime from the JDK's jmods (ADR 0012). Not Alpine: ONNX Runtime and the DJL
+# tokenizer behind the semantic cache's in-process embedding model ship only glibc native libraries,
+# so the runtime is built on Amazon Linux 2023 and is glibc-linked like the final image (ADR 0012,
+# amended in Iteration 4). The module list is the same in every image; ADR 0012 gives the reason
+# for each module.
+FROM amazoncorretto:25-al2023 AS jre
 # On Linux, --strip-debug also strips native debug symbols, which needs objcopy (binutils).
-RUN apk add --no-cache binutils && jlink \
+RUN dnf install -y binutils && jlink \
     --add-modules java.base,java.desktop,java.instrument,java.logging,java.management,java.naming,java.net.http,java.security.jgss,java.security.sasl,java.sql,java.xml,jdk.attach,jdk.jcmd,jdk.jfr,jdk.management,jdk.management.jfr,jdk.unsupported,jdk.zipfs \
     --strip-debug --no-man-pages --no-header-files --compress=zip-6 \
     --output /opt/java
 
-# Unpinned on purpose to pick up Alpine security fixes; build with `--pull` (ADR 0012).
-FROM alpine:latest
+# Unpinned on purpose to pick up security fixes; build with `--pull` (ADR 0012). It has no useradd,
+# so the app user is added by hand; DJL caches its native library under the user's home.
+FROM amazonlinux:2023
 ENV JAVA_HOME=/opt/java
 ENV PATH="$JAVA_HOME/bin:$PATH"
 COPY --from=jre /opt/java /opt/java
-RUN addgroup -S app && adduser -S app -G app
+RUN echo 'app:x:1000:1000::/home/app:/sbin/nologin' >> /etc/passwd \
+    && echo 'app:x:1000:' >> /etc/group \
+    && mkdir -p /home/app /app && chown 1000:1000 /home/app /app
 USER app
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
 EXPOSE 8080
-ENTRYPOINT ["java", "-jar", "app.jar"]
+# ONNX Runtime loads its native library through System.load.
+ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]

@@ -114,6 +114,7 @@ curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfo
 | `PORTFOLIO_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8084/mcp` |
 | `FILINGS_DB_PASSWORD` | `filings-mcp`, `postgres` | With Gradle, yes: the password of the `filings_mcp` database user. Compose defaults it to `filings-local-dev` |
 | `PORTFOLIO_DB_PASSWORD` | `portfolio-mcp`, `postgres` | With Gradle, yes: the password of the `portfolio_mcp` database user. Compose defaults it to `portfolio-local-dev` |
+| `SEM_CACHE_DB_PASSWORD` | `agent-app`, `postgres` | With Gradle, yes: the password of the `sem_cache` database user (semantic cache). Compose defaults it to `sem-cache-local-dev` |
 | `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
@@ -124,7 +125,7 @@ Use either Gradle or Docker Compose. Both bind ports 8080, 8081, 8082 and 8084 o
 
 #### Option A: Gradle, MCP servers first
 
-`agent-app` fails to start when `market-data-mcp`, `filings-mcp` or `portfolio-mcp` is unreachable.
+`agent-app` fails to start when Postgres (its semantic cache), `market-data-mcp`, `filings-mcp` or `portfolio-mcp` is unreachable.
 
 ```bash
 # terminal 1
@@ -143,12 +144,13 @@ export PORTFOLIO_DB_PASSWORD=portfolio-local-dev
 
 # terminal 4 (after all three MCP servers have started)
 export ANTHROPIC_API_KEY=...
+export SEM_CACHE_DB_PASSWORD=sem-cache-local-dev
 ./gradlew :agent-app:bootRun
 ```
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp`, `filings-mcp` and `portfolio-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after Postgres is healthy and `market-data-mcp`, `filings-mcp` and `portfolio-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, with the semantic cache's answers, and `filings-mcp` re-ingests on its next start.
 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY

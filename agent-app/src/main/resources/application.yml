@@ -61,6 +61,24 @@ stock-agent:
     prompt-id: classifier-v1
     max-tokens: 256
     timeout: 10s
+  # Answers CACHEABLE prompts from earlier answers to similar questions with the same ticker set.
+  semantic-cache:
+    enabled: true
+    # Lowest cosine similarity between bge-small embeddings that counts as a hit. Set from
+    # SemanticCacheThresholdCalibrationTest, which fails when a calibration pair falls on the
+    # wrong side of it.
+    similarity-threshold: 0.87
+    # One TTL for every stored answer. Expired rows are never deleted.
+    ttl: 1h
+    # jdbc (Postgres, see docker-compose.yml) or in-memory (empty on every start; for tests).
+    store: jdbc
+    # The jdbc store's Postgres user, whose search_path is the sem_cache schema. The password comes
+    # from the SEM_CACHE_DB_PASSWORD environment variable; startup fails when Postgres is unreachable.
+    database:
+      host: ${SEM_CACHE_DB_HOST:localhost}
+      port: ${SEM_CACHE_DB_PORT:5432}
+      name: ${SEM_CACHE_DB_NAME:stockagent}
+      user: ${SEM_CACHE_DB_USER:sem_cache}
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
   # when any of them is unreachable, so start market-data-mcp, filings-mcp and portfolio-mcp first.
   mcp-servers:

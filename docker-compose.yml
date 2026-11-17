@@ -15,6 +15,7 @@ services:
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-dev}
       FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
       PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
+      SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
     volumes:
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -98,8 +99,12 @@ services:
       STOCK_AGENT_MCP_SERVERS_PORTFOLIO_URL: http://portfolio-mcp:8084/mcp
       # Only this service gets the Anthropic key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
-    # agent-app fails to start when any MCP server is unreachable.
+      SEM_CACHE_DB_HOST: postgres
+      SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
+    # agent-app fails to start when Postgres (semantic cache) or any MCP server is unreachable.
     depends_on:
+      postgres:
+        condition: service_healthy
       market-data-mcp:
         condition: service_healthy
       filings-mcp:

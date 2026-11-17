@@ -40,7 +40,7 @@ import tools.jackson.databind.json.JsonMapper;
 /// Verifies the structured JSON log lines a `/api/chat` call writes to the console.
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "ANTHROPIC_API_KEY=test-key")
+    properties = {"ANTHROPIC_API_KEY=test-key", "stock-agent.semantic-cache.store=in-memory"})
 @Import(ChatLoggingTest.FakeModelConfig.class)
 @ExtendWith(OutputCaptureExtension.class)
 class ChatLoggingTest {
@@ -64,6 +64,9 @@ class ChatLoggingTest {
       "price of Apple while the classifier is down";
   private static final String CLASSIFIER_FAILURE_MESSAGE = "Forced classifier failure";
   private static final String INVALID_TICKER_PROMPT = "price of Apple with a bad ticker";
+  private static final String RISK_PROMPT = "What risks does Apple list in its latest 10-K?";
+  private static final String REWORDED_RISK_PROMPT = "What are Apple's 10-K risk factors?";
+  private static final String HOLDINGS_PROMPT = "What stocks do I hold?";
   private static final String UUID_PATTERN =
       "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
   private static final TypeReference<Map<String, Object>> LOG_LINE_TYPE = new TypeReference<>() {};
@@ -79,10 +82,11 @@ class ChatLoggingTest {
   }
 
   /// As the classifier: throws for the classifier-failing prompt, returns an invalid ticker for the
-  /// invalid-ticker prompt, and otherwise returns `REAL_TIME` with `AAPL`. As the agents: throws
+  /// invalid-ticker prompt, `CACHEABLE` with `AAPL` for the risk prompts, `CACHEABLE` with no
+  /// tickers for the holdings prompt, and otherwise `REAL_TIME` with `AAPL`. As the agents: throws
   /// for the failing prompt; routes the holdings-performance prompt to the Portfolio agent then the
-  /// Market data agent; otherwise routes to the Market data agent, which asks for `getQuote(AAPL)`
-  /// and relays the result.
+  /// Market data agent, and the holdings prompt to the Portfolio agent; otherwise routes to the
+  /// Market data agent, which asks for `getQuote(AAPL)` and relays the result.
   ///
   /// Like each agent's Anthropic chat model, it reports every response to the provenance listener's
   /// token listener for the agent that made the call.
@@ -124,8 +128,14 @@ class ChatLoggingTest {
       boolean asksAboutHoldings =
           chatRequest.messages().stream()
               .anyMatch(message -> message.toString().contains(HOLDINGS_PERFORMANCE_PROMPT));
-      return asksAboutHoldings
-          ? ScriptedAgentsChatModel.portfolioThenMarketData("AAPL").doChat(chatRequest)
+      if (asksAboutHoldings) {
+        return ScriptedAgentsChatModel.portfolioThenMarketData("AAPL").doChat(chatRequest);
+      }
+      boolean asksWhatIsHeld =
+          chatRequest.messages().stream()
+              .anyMatch(message -> message.toString().contains(HOLDINGS_PROMPT));
+      return asksWhatIsHeld
+          ? ScriptedAgentsChatModel.portfolioOnly().doChat(chatRequest)
           : ScriptedAgentsChatModel.marketDataOnly("AAPL").doChat(chatRequest);
     }
 
@@ -135,8 +145,14 @@ class ChatLoggingTest {
       if (requestText.contains(CLASSIFIER_FAILING_PROMPT)) {
         throw new IllegalStateException(CLASSIFIER_FAILURE_MESSAGE);
       }
-      return requestText.contains(INVALID_TICKER_PROMPT)
-          ? ScriptedAgentsChatModel.classifierReply("CACHEABLE", List.of("APPLE1"))
+      if (requestText.contains(INVALID_TICKER_PROMPT)) {
+        return ScriptedAgentsChatModel.classifierReply("CACHEABLE", List.of("APPLE1"));
+      }
+      if (requestText.contains(RISK_PROMPT) || requestText.contains(REWORDED_RISK_PROMPT)) {
+        return ScriptedAgentsChatModel.classifierReply("CACHEABLE", List.of("AAPL"));
+      }
+      return requestText.contains(HOLDINGS_PROMPT)
+          ? ScriptedAgentsChatModel.classifierReply("CACHEABLE", List.of())
           : ScriptedAgentsChatModel.classifierReply("REAL_TIME", List.of("AAPL"));
     }
   }
@@ -335,6 +351,9 @@ class ChatLoggingTest {
         postChat("Price of Apple", Map.of("X-Correlation-Id", correlationId));
 
     assertThat(httpResponse.statusCode()).isEqualTo(200);
+    assertThat(
+            jsonMapper.readValue(httpResponse.body(), ChatController.ChatResponse.class).cached())
+        .isFalse();
     List<Map<String, Object>> logLines = logLinesFor(capturedOutput, correlationId);
     Map<String, Object> promptClassifiedData = eventData(singleEvent(logLines, "promptClassified"));
     assertThat(promptClassifiedData)
@@ -343,8 +362,12 @@ class ChatLoggingTest {
     assertThat(promptClassifiedData.get("classifyDurationTimeMs")).isInstanceOf(Number.class);
     assertThat(eventData(singleEvent(logLines, "semanticCacheLookup")))
         .containsEntry("cacheOutcome", "SKIPPED")
+        .containsEntry("skipReason", "realTime")
         .containsEntry("freshnessClass", "REAL_TIME")
-        .containsEntry("tickers", List.of("AAPL"));
+        .containsEntry("tickers", List.of("AAPL"))
+        .doesNotContainKey("cacheSimilarity");
+    assertThat(eventData(singleEvent(logLines, "semanticCacheStoreSkipped")))
+        .containsEntry("storeSkipReason", "realTime");
     assertThat(logLines)
         .noneMatch(logLine -> "semanticCacheSkipped".equals(logLine.get("eventName")));
   }
@@ -425,5 +448,88 @@ class ChatLoggingTest {
         .containsEntry("freshnessClass", "REAL_TIME")
         .containsEntry("tickers", List.of());
     assertThat(logLines).noneMatch(logLine -> "promptClassified".equals(logLine.get("eventName")));
+  }
+
+  @Test
+  void rewordedCacheableQuestionIsAnsweredFromTheCacheWithoutRunningAgents(
+      CapturedOutput capturedOutput) throws Exception {
+    String firstCorrelationId = "corr-" + UUID.randomUUID();
+    String secondCorrelationId = "corr-" + UUID.randomUUID();
+
+    HttpResponse<String> firstResponse =
+        postChat(RISK_PROMPT, Map.of("X-Correlation-Id", firstCorrelationId));
+    HttpResponse<String> secondResponse =
+        postChat(REWORDED_RISK_PROMPT, Map.of("X-Correlation-Id", secondCorrelationId));
+
+    ChatController.ChatResponse firstAnswer =
+        jsonMapper.readValue(firstResponse.body(), ChatController.ChatResponse.class);
+    ChatController.ChatResponse secondAnswer =
+        jsonMapper.readValue(secondResponse.body(), ChatController.ChatResponse.class);
+    assertThat(firstAnswer.cached()).isFalse();
+    assertThat(secondAnswer.cached()).isTrue();
+    assertThat(secondAnswer.answer()).isEqualTo(firstAnswer.answer());
+    assertThat(secondAnswer.toolsCalled()).isEmpty();
+
+    List<Map<String, Object>> firstLogLines = logLinesFor(capturedOutput, firstCorrelationId);
+    assertThat(eventData(singleEvent(firstLogLines, "semanticCacheLookup")))
+        .containsEntry("cacheOutcome", "MISS")
+        .containsEntry("freshnessClass", "CACHEABLE")
+        .doesNotContainKey("cacheSimilarity");
+    assertThat(eventData(singleEvent(firstLogLines, "semanticCacheStored")))
+        .containsEntry("tickerKey", "AAPL");
+    assertThat(eventData(singleEvent(firstLogLines, "answerProvenance")))
+        .containsEntry("cacheOutcome", "MISS")
+        .doesNotContainKey("tokensSaved");
+
+    List<Map<String, Object>> secondLogLines = logLinesFor(capturedOutput, secondCorrelationId);
+    Map<String, Object> hitLookupData =
+        eventData(singleEvent(secondLogLines, "semanticCacheLookup"));
+    assertThat(hitLookupData).containsEntry("cacheOutcome", "HIT");
+    assertThat(hitLookupData.get("cacheSimilarity")).isInstanceOf(Number.class);
+    assertThat(hitLookupData.get("cacheLookupDurationTimeMs")).isInstanceOf(Number.class);
+    Map<String, Object> hitProvenanceData =
+        eventData(singleEvent(secondLogLines, "answerProvenance"));
+    assertThat(hitProvenanceData)
+        .containsEntry("cacheOutcome", "HIT")
+        .containsEntry("agentsUsed", List.of())
+        .containsEntry(
+            "tokensByAgent",
+            Map.of(
+                PromptClassifierConfig.CLASSIFIER_NAME,
+                Map.of("inputTokens", 100, "outputTokens", 10)));
+    assertThat(((Number) hitProvenanceData.get("tokensSaved")).longValue()).isPositive();
+    assertThat(secondLogLines)
+        .noneMatch(logLine -> "toolExecuted".equals(logLine.get("eventName")));
+  }
+
+  @Test
+  void portfolioAnswerIsNeverStoredSoTheRepeatedQuestionRunsAgentsAgain(
+      CapturedOutput capturedOutput) throws Exception {
+    String firstCorrelationId = "corr-" + UUID.randomUUID();
+    String secondCorrelationId = "corr-" + UUID.randomUUID();
+
+    HttpResponse<String> firstResponse =
+        postChat(
+            HOLDINGS_PROMPT, Map.of("X-Correlation-Id", firstCorrelationId, "X-User-Id", "alice"));
+    HttpResponse<String> secondResponse =
+        postChat(
+            HOLDINGS_PROMPT, Map.of("X-Correlation-Id", secondCorrelationId, "X-User-Id", "alice"));
+
+    for (HttpResponse<String> httpResponse : List.of(firstResponse, secondResponse)) {
+      ChatController.ChatResponse chatResponse =
+          jsonMapper.readValue(httpResponse.body(), ChatController.ChatResponse.class);
+      assertThat(chatResponse.cached()).isFalse();
+      assertThat(chatResponse.toolsCalled())
+          .extracting(ChatController.ToolCall::name)
+          .containsExactly("getHoldings");
+    }
+    for (String correlationId : List.of(firstCorrelationId, secondCorrelationId)) {
+      List<Map<String, Object>> logLines = logLinesFor(capturedOutput, correlationId);
+      assertThat(eventData(singleEvent(logLines, "semanticCacheLookup")))
+          .containsEntry("cacheOutcome", "MISS");
+      assertThat(eventData(singleEvent(logLines, "semanticCacheStoreSkipped")))
+          .containsEntry("storeSkipReason", "portfolioToolCalled")
+          .containsEntry("portfolioToolsCalled", List.of("getHoldings"));
+    }
   }
 }

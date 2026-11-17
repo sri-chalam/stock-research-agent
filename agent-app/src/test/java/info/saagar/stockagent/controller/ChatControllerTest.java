@@ -31,7 +31,7 @@ import tools.jackson.databind.json.JsonMapper;
 
 @SpringBootTest(
     webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
-    properties = "ANTHROPIC_API_KEY=test-key")
+    properties = {"ANTHROPIC_API_KEY=test-key", "stock-agent.semantic-cache.store=in-memory"})
 @Import(ChatControllerTest.FakeModelConfig.class)
 class ChatControllerTest {
 

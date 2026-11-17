@@ -39,7 +39,7 @@ Full requirements: @docs/requirements/stock-research-agent-spec.md
 | Database | PostgreSQL + pgvector (portfolios, pending actions, memory, filings embeddings, semantic cache, session state) |
 | Logging | SLF4J 2 + Logback |
 | Testing | JUnit Jupiter + AssertJ; versions managed by the Spring Boot BOM where available |
-| Container | jlink runtimes built from Amazon Corretto 25 (ADR 0012): `alpine:latest` for `agent-app`, `market-data-mcp` and `portfolio-mcp`; `amazonlinux:2023` for `filings-mcp`, because ONNX Runtime needs glibc |
+| Container | jlink runtimes built from Amazon Corretto 25 (ADR 0012): `alpine:latest` for `market-data-mcp` and `portfolio-mcp`; `amazonlinux:2023` for `agent-app` and `filings-mcp`, because ONNX Runtime (their in-process embedding model) needs glibc |
 
 ## 3. Project Structure
 
@@ -64,8 +64,9 @@ Package by layer under `info.saagar.stockagent`:
 | `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`, `PortfolioAgent`) |
 | `classifier` | The prompt classifier, which is not an agent: its AI service (`ClassifierAiService`), output records (`Classification`, `FreshnessClass`, `ClassifiedPrompt`) and `PromptClassifier`, which validates tickers and falls back to `REAL_TIME` |
+| `cache` | The semantic cache, which is not an agent: `SemanticCache` (hit, miss and store rules), `SemanticCacheStore` with `JdbcSemanticCacheStore` (own `sem_cache` table, created by `sem-cache-schema.sql`) and `InMemorySemanticCacheStore` (tests), and its records (`CacheLookup`, `CacheCandidate`, `CacheEntry`) |
 | `tool` | Tool-call helpers (`ToolArguments`, `McpUserHeaders`: forwards the chat user's `X-User-Id` on MCP calls to `portfolio-mcp` only). agent-app has no `@Tool` classes: tools come from MCP servers |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`) |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`) |
 | `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `RunProvenance`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
