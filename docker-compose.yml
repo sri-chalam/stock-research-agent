@@ -95,13 +95,16 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       STOCK_AGENT_MCP_SERVERS_MARKET_DATA_URL: http://market-data-mcp:8081/mcp
       STOCK_AGENT_MCP_SERVERS_FILINGS_URL: http://filings-mcp:8082/mcp
+      STOCK_AGENT_MCP_SERVERS_PORTFOLIO_URL: http://portfolio-mcp:8084/mcp
       # Only this service gets the Anthropic key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
-    # agent-app fails to start when either MCP server is unreachable.
+    # agent-app fails to start when any MCP server is unreachable.
     depends_on:
       market-data-mcp:
         condition: service_healthy
       filings-mcp:
+        condition: service_healthy
+      portfolio-mcp:
         condition: service_healthy
 
   # Log search (ADR 0011): Alloy ships every container's stdout to Loki; Grafana queries Loki.

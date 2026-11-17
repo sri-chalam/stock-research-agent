@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import dev.langchain4j.model.chat.ChatModel;
 import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.agent.PortfolioAgent;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
+import info.saagar.stockagent.config.PortfolioAgentConfig;
 import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.testing.FakeMcpServer;
 import java.net.URI;
@@ -40,14 +42,18 @@ class ChatLoggingTest {
 
   private static final FakeMcpServer FAKE_MARKET_DATA_MCP = FakeMcpServer.start("getQuote");
   private static final FakeMcpServer FAKE_FILINGS_MCP = FakeMcpServer.start("listFilings");
+  private static final FakeMcpServer FAKE_PORTFOLIO_MCP =
+      FakeMcpServer.start("getHoldings", "getWatchlist");
 
   @DynamicPropertySource
   static void pointAgentAtFakeMcpServer(DynamicPropertyRegistry propertyRegistry) {
     propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
     propertyRegistry.add("stock-agent.mcp-servers.filings.url", FAKE_FILINGS_MCP::url);
+    propertyRegistry.add("stock-agent.mcp-servers.portfolio.url", FAKE_PORTFOLIO_MCP::url);
   }
 
   private static final String FAILING_PROMPT = "please fail";
+  private static final String HOLDINGS_PERFORMANCE_PROMPT = "How are my holdings doing today?";
   private static final String FORCED_FAILURE_MESSAGE = "Forced model failure for logging test";
   private static final String UUID_PATTERN =
       "^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$";
@@ -63,7 +69,8 @@ class ChatLoggingTest {
     }
   }
 
-  /// Throws for the failing prompt; otherwise routes to the Market data agent, which asks for
+  /// Throws for the failing prompt; routes the holdings-performance prompt to the Portfolio agent
+  /// then the Market data agent; otherwise routes to the Market data agent, which asks for
   /// `getQuote(AAPL)` and relays the result.
   static class FailableQuoteChatModel implements ChatModel {
     @Override
@@ -75,7 +82,12 @@ class ChatLoggingTest {
       if (asksToFail) {
         throw new IllegalStateException(FORCED_FAILURE_MESSAGE);
       }
-      return ScriptedAgentsChatModel.marketDataOnly("AAPL").doChat(chatRequest);
+      boolean asksAboutHoldings =
+          chatRequest.messages().stream()
+              .anyMatch(message -> message.toString().contains(HOLDINGS_PERFORMANCE_PROMPT));
+      return asksAboutHoldings
+          ? ScriptedAgentsChatModel.portfolioThenMarketData("AAPL").doChat(chatRequest)
+          : ScriptedAgentsChatModel.marketDataOnly("AAPL").doChat(chatRequest);
     }
   }
 
@@ -170,6 +182,39 @@ class ChatLoggingTest {
                     List.of("getQuote"))));
     assertThat(eventData(answerProvenance).get("completeExecDurationTimeMs"))
         .isInstanceOf(Number.class);
+  }
+
+  @Test
+  void holdingsPerformanceProvenanceListsPortfolioAgentThenMarketDataAgent(
+      CapturedOutput capturedOutput) throws Exception {
+    String correlationId = "corr-" + UUID.randomUUID();
+
+    HttpResponse<String> httpResponse =
+        postChat(
+            HOLDINGS_PERFORMANCE_PROMPT,
+            Map.of("X-Correlation-Id", correlationId, "X-User-Id", "alice"));
+
+    assertThat(httpResponse.statusCode()).isEqualTo(200);
+    Map<String, Object> answerProvenance =
+        singleEvent(logLinesFor(capturedOutput, correlationId), "answerProvenance");
+    assertThat(eventData(answerProvenance))
+        .containsEntry(
+            "agentsUsed",
+            List.of(
+                Map.of(
+                    "agentName",
+                    PortfolioAgentConfig.PORTFOLIO_AGENT_NAME,
+                    "promptId",
+                    PortfolioAgent.PROMPT_ID,
+                    "toolsUsed",
+                    List.of("getHoldings")),
+                Map.of(
+                    "agentName",
+                    MarketDataAgentConfig.MARKET_DATA_AGENT_NAME,
+                    "promptId",
+                    MarketDataAgent.PROMPT_ID,
+                    "toolsUsed",
+                    List.of("getQuote"))));
   }
 
   @Test

@@ -44,8 +44,17 @@ stock-agent:
         - listFilings
         - getCompanyFacts
         - searchFilings
+    # Reads the user's holdings and watchlist. The user comes from X-User-Id on the MCP call.
+    portfolio:
+      model: claude-haiku-5-5
+      max-tokens: 1024
+      timeout: 30s
+      max-steps: 4
+      allowed-tools:
+        - getHoldings
+        - getWatchlist
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
-  # when any of them is unreachable, so start market-data-mcp and filings-mcp first.
+  # when any of them is unreachable, so start market-data-mcp, filings-mcp and portfolio-mcp first.
   mcp-servers:
     market-data:
       url: ${MARKET_DATA_MCP_URL:http://localhost:8081/mcp}
@@ -54,5 +63,10 @@ stock-agent:
       tool-execution-timeout: 10s
     filings:
       url: ${FILINGS_MCP_URL:http://localhost:8082/mcp}
+      protocol-version: 2025-11-25
+      tool-execution-timeout: 10s
+    # The only server that receives the chat user's X-User-Id.
+    portfolio:
+      url: ${PORTFOLIO_MCP_URL:http://localhost:8084/mcp}
       protocol-version: 2025-11-25
       tool-execution-timeout: 10s

@@ -78,12 +78,12 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `agent-app` | 8080 | `/api/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
-| `portfolio-mcp` | 8084 | `/mcp` | Built (Iteration 3b); not yet called by `agent-app` |
+| `portfolio-mcp` | 8084 | `/mcp` | Built (Iteration 3b) |
 | Grafana (Compose only) | 3000 | `/explore` | Built (Iteration 2a) |
 
 ## Run locally
 
-Three apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Supervisor (Claude Haiku 5.5), which sends each part of the question to a specialist agent and merges their answers. The Market data agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
+Four apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Supervisor (Claude Haiku 5.5), which sends each part of the question to a specialist agent and merges their answers. The Market data agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
 
 ```
 curl → agent-app :8080 (/api/chat, Supervisor → Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
@@ -96,6 +96,12 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
                                                                                                        └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
+The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. The user comes from the optional `X-User-Id` header on `POST /api/chat` (`alice` or `bob` in the seed data). `agent-app` forwards it only on MCP calls to `portfolio-mcp`, never to the other MCP servers and never in prompt text. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
+
+```
+curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfolio agent) → MCP client + X-User-Id → portfolio-mcp :8084 (/mcp, portfolio tools) → Postgres (portfolio schema)
+```
+
 ### 1. Set environment variables
 
 | Variable | Used by | Required |
@@ -105,6 +111,7 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
 | `ANTHROPIC_API_KEY` | `agent-app` | Yes |
 | `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
 | `FILINGS_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8082/mcp` |
+| `PORTFOLIO_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8084/mcp` |
 | `FILINGS_DB_PASSWORD` | `filings-mcp`, `postgres` | With Gradle, yes: the password of the `filings_mcp` database user. Compose defaults it to `filings-local-dev` |
 | `PORTFOLIO_DB_PASSWORD` | `portfolio-mcp`, `postgres` | With Gradle, yes: the password of the `portfolio_mcp` database user. Compose defaults it to `portfolio-local-dev` |
 | `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
@@ -113,11 +120,11 @@ The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
 ### 2. Start the servers
 
-Use either Gradle or Docker Compose. Both bind ports 8080, 8081 and 8082 on `127.0.0.1`, so run only one of them at a time.
+Use either Gradle or Docker Compose. Both bind ports 8080, 8081, 8082 and 8084 on `127.0.0.1`, so run only one of them at a time.
 
 #### Option A: Gradle, MCP servers first
 
-`agent-app` fails to start when `market-data-mcp` or `filings-mcp` is unreachable.
+`agent-app` fails to start when `market-data-mcp`, `filings-mcp` or `portfolio-mcp` is unreachable.
 
 ```bash
 # terminal 1
@@ -130,31 +137,31 @@ export SEC_USER_AGENT="stock-research-agent you@example.com"
 export FILINGS_DB_PASSWORD=filings-local-dev
 ./gradlew :filings-mcp:bootRun
 
-# terminal 3 (after both MCP servers have started)
-export ANTHROPIC_API_KEY=...
-./gradlew :agent-app:bootRun
-
-# optional, terminal 4: portfolio-mcp also needs the Compose Postgres
+# terminal 3: portfolio-mcp also needs the Compose Postgres
 export PORTFOLIO_DB_PASSWORD=portfolio-local-dev
 ./gradlew :portfolio-mcp:bootRun
+
+# terminal 4 (after all three MCP servers have started)
+export ANTHROPIC_API_KEY=...
+./gradlew :agent-app:bootRun
 ```
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp`, `filings-mcp` and `portfolio-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
 docker compose build --pull     # build the images; --pull refreshes the unpinned alpine:latest and amazonlinux:2023 bases (ADR 0012)
-docker compose up -d            # start the three apps, Postgres and log search
-docker compose ps               # all services Up; both MCP servers show (healthy)
+docker compose up -d            # start the four apps, Postgres and log search
+docker compose ps               # all services Up; the three MCP servers show (healthy)
 docker compose logs -f          # follow all apps' logs (Ctrl+C stops following, not the apps)
 
 docker compose down             # stop and remove the containers and the network
 ```
 
-Leave out `-d` to run in the foreground; Ctrl+C then stops all three apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp` and `http://filings-mcp:8082/mcp`. The sample prompts and `curl` calls below work unchanged.
+Leave out `-d` to run in the foreground; Ctrl+C then stops all four apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp`, `http://filings-mcp:8082/mcp` and `http://portfolio-mcp:8084/mcp`. The sample prompts and `curl` calls below work unchanged.
 
 #### Log search (Iteration 2a)
 
@@ -299,6 +306,26 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
   -d '{"message":"What do I hold, and what is on my watchlist?"}'
 # toolsCalled includes getHoldings and getWatchlist
+```
+
+**Holdings, then their quotes** (Portfolio agent, then Market data agent). The `answerProvenance` log line lists the `portfolio` agent first, then `market-data` with one `getQuote` per held ticker.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"How are my holdings doing today?"}'
+# toolsCalled: getHoldings (portfolio), then getQuote for AAPL, MSFT and NVDA (market-data)
+```
+
+**No user, or an invalid one**
+
+```bash
+# Without X-User-Id, the answer relays "No user identified; send X-User-Id"
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What do I hold?"}'
+
+# An X-User-Id that does not match ^[A-Za-z0-9-]{1,64}$ returns 400
+curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice;bob' \
+  -d '{"message":"What do I hold?"}'
 ```
 
 ### 4. Call the MCP tools directly (optional)

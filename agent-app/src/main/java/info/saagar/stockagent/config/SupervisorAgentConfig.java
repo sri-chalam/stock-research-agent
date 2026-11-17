@@ -7,6 +7,7 @@ import dev.langchain4j.model.anthropic.AnthropicChatModel;
 import dev.langchain4j.model.chat.ChatModel;
 import info.saagar.stockagent.agent.FilingsAgent;
 import info.saagar.stockagent.agent.MarketDataAgent;
+import info.saagar.stockagent.agent.PortfolioAgent;
 import info.saagar.stockagent.logging.AgentProvenanceListener;
 import info.saagar.stockagent.logging.ToolExecutionLogger;
 import java.io.IOException;
@@ -33,7 +34,7 @@ public class SupervisorAgentConfig {
   public static final String SUPERVISOR_AGENT_NAME = "supervisor";
 
   /// ID of the Supervisor's prompt version, taken from its filename and logged with every answer.
-  public static final String SUPERVISOR_PROMPT_ID = "supervisor-v1";
+  public static final String SUPERVISOR_PROMPT_ID = "supervisor-v2";
 
   /// Builds the Claude chat model for the Supervisor's planner from its `application.yml` settings.
   ///
@@ -57,7 +58,7 @@ public class SupervisorAgentConfig {
         .build();
   }
 
-  /// Builds the Supervisor over the Filings analyst and the Market data agent.
+  /// Builds the Supervisor over the Filings analyst, the Market data agent and the Portfolio agent.
   ///
   /// It returns the planner's summary of the specialists' answers (`SUMMARY`), and `max-steps` caps
   /// how many specialist invocations one run may make. Without chat memory, each request is a fresh
@@ -66,6 +67,7 @@ public class SupervisorAgentConfig {
   /// @param supervisorChatModel chat model the planner uses
   /// @param filingsAgent the Filings analyst
   /// @param marketDataAgent the Market data agent
+  /// @param portfolioAgent the Portfolio agent
   /// @param agentProperties per-agent settings
   /// @param agentProvenanceListener records which specialists and tools each run used
   /// @param toolExecutionLogger logs each tool call the specialists make
@@ -76,6 +78,7 @@ public class SupervisorAgentConfig {
       ChatModel supervisorChatModel,
       FilingsAgent filingsAgent,
       MarketDataAgent marketDataAgent,
+      PortfolioAgent portfolioAgent,
       AgentProperties agentProperties,
       AgentProvenanceListener agentProvenanceListener,
       ToolExecutionLogger toolExecutionLogger)
@@ -93,7 +96,7 @@ public class SupervisorAgentConfig {
     return AgenticServices.supervisorBuilder()
         .name(SUPERVISOR_AGENT_NAME)
         .chatModel(supervisorChatModel)
-        .subAgents(filingsAgent, marketDataAgent)
+        .subAgents(filingsAgent, marketDataAgent, portfolioAgent)
         .responseStrategy(SupervisorResponseStrategy.SUMMARY)
         .supervisorContext(supervisorPrompt)
         .maxAgentsInvocations(agentProperties.forAgent(SUPERVISOR_AGENT_NAME).maxSteps())

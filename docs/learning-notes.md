@@ -78,7 +78,7 @@ Built in [SupervisorAgentConfig](../agent-app/src/main/java/info/saagar/stockage
 - After a specialist answers, the planner is called again with that answer as `lastResponse`, and picks another specialist or `done`. One prompt can reach several specialist agents, one at a time.
 - The planner keeps a chat memory for the run (`CHAT_MEMORY`, a 20-message window, the default). Later planner calls see the earlier specialists' answers too, not just the last one.
 - `max-steps: 4` (`maxAgentsInvocations`; library default 10) caps the specialist calls per run. When the cap is hit, the run stops without a `done` call and returns the last specialist's answer, whatever the response strategy.
-- The planner's system prompt is the library's own. Our [supervisor-v1](../agent-app/src/main/resources/prompts/supervisor-v1.txt) prompt is only appended to it as the "supervisor context". The planner sees each specialist as a card built from its `@Agent` name, description and arguments, so the description decides the routing.
+- The planner's system prompt is the library's own. Our [supervisor-v2](../agent-app/src/main/resources/prompts/supervisor-v2.txt) prompt is only appended to it as the "supervisor context". The planner sees each specialist as a card built from its `@Agent` name, description and arguments, so the description decides the routing.
 
 ### What a specialist agent receives
 
@@ -95,7 +95,7 @@ The response strategy decides what the run returns once the planner says `done`:
 | `SUMMARY` (ours) | The `response` argument of the planner's `done` choice: the planner's recap of every specialist's answer, from its chat memory | None. The recap rides on the `done` planner call, which runs under every strategy |
 | `SCORED` | Builds both, then a `ResponseAgent` call scores each against the user's prompt (0.0 to 1.0) and returns the higher one | One scoring call |
 
-- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v1` tells it to keep them exactly; nothing checks it (the Critic was dropped).
+- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v2` tells it to keep them exactly; nothing checks it (the Critic was dropped).
 
 ### Runtime flow of a combined question
 

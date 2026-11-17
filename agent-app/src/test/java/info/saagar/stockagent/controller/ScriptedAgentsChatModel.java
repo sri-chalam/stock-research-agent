@@ -11,6 +11,7 @@ import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
+import info.saagar.stockagent.config.PortfolioAgentConfig;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -25,8 +26,9 @@ import tools.jackson.databind.json.JsonMapper;
 /// on the beta `SupervisorPlanner` prompt format, so it may need updating when
 /// `langchain4j-agentic` changes.
 ///
-/// As a specialist, it first calls one tool (`listFilings` for the Filings analyst, `getQuote` for
-/// the Market data agent) for the symbol, then answers with the tool result text.
+/// As a specialist, it first calls one tool (`listFilings` for the Filings analyst, `getHoldings`
+/// with no arguments for the Portfolio agent, `getQuote` for the Market data agent) for the symbol,
+/// then answers with the tool result text.
 class ScriptedAgentsChatModel implements ChatModel {
 
   private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
@@ -58,14 +60,32 @@ class ScriptedAgentsChatModel implements ChatModel {
         symbolToRequest);
   }
 
+  /// A planner that sends the request to the Portfolio agent only.
+  static ScriptedAgentsChatModel portfolioOnly() {
+    return new ScriptedAgentsChatModel(List.of(PortfolioAgentConfig.PORTFOLIO_AGENT_NAME), "");
+  }
+
+  /// A planner that sends the request to the Portfolio agent, then the Market data agent.
+  static ScriptedAgentsChatModel portfolioThenMarketData(String symbolToRequest) {
+    return new ScriptedAgentsChatModel(
+        List.of(
+            PortfolioAgentConfig.PORTFOLIO_AGENT_NAME,
+            MarketDataAgentConfig.MARKET_DATA_AGENT_NAME),
+        symbolToRequest);
+  }
+
   @Override
   public ChatResponse doChat(ChatRequest chatRequest) {
     String systemText = systemText(chatRequest.messages());
     if (systemText.contains("planner")) {
       return plan(chatRequest.messages());
     }
+    if (systemText.contains("Portfolio agent")) {
+      return answerAsSpecialist(chatRequest.messages(), "getHoldings", "{}");
+    }
     String toolName = systemText.contains("Filings analyst") ? "listFilings" : "getQuote";
-    return answerAsSpecialist(chatRequest.messages(), toolName);
+    return answerAsSpecialist(
+        chatRequest.messages(), toolName, "{\"symbol\":\"" + symbolToRequest + "\"}");
   }
 
   private ChatResponse plan(List<ChatMessage> messages) {
@@ -102,18 +122,15 @@ class ScriptedAgentsChatModel implements ChatModel {
         .build();
   }
 
-  private ChatResponse answerAsSpecialist(List<ChatMessage> messages, String toolName) {
+  private static ChatResponse answerAsSpecialist(
+      List<ChatMessage> messages, String toolName, String toolArguments) {
     if (messages.getLast() instanceof ToolExecutionResultMessage toolResult) {
       return ChatResponse.builder()
           .aiMessage(AiMessage.from("Result: " + toolResult.text()))
           .build();
     }
     ToolExecutionRequest toolRequest =
-        ToolExecutionRequest.builder()
-            .id("call-1")
-            .name(toolName)
-            .arguments("{\"symbol\":\"" + symbolToRequest + "\"}")
-            .build();
+        ToolExecutionRequest.builder().id("call-1").name(toolName).arguments(toolArguments).build();
     return ChatResponse.builder().aiMessage(AiMessage.from(toolRequest)).build();
   }
 
