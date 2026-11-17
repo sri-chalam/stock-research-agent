@@ -4,7 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import dev.langchain4j.agent.tool.ToolExecutionRequest;
+import dev.langchain4j.data.message.AiMessage;
 import dev.langchain4j.invocation.InvocationContext;
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.tool.ToolExecution;
 import dev.langchain4j.service.tool.ToolExecutionResult;
@@ -125,5 +127,32 @@ class RunProvenanceTest {
     assertThat(runProvenance.agentCalls()).isEmpty();
     assertThat(runProvenance.tokensByAgent()).isEmpty();
     assertThat(runProvenance.totalTokens()).isEqualTo(new TokenCount(0, 0));
+  }
+
+  private static ChatResponse modelResponse(String modelName, TokenUsage tokenUsage) {
+    return ChatResponse.builder()
+        .aiMessage(AiMessage.from("answer"))
+        .modelName(modelName)
+        .tokenUsage(tokenUsage)
+        .build();
+  }
+
+  @Test
+  void modelResponseRecordsItsModelAndAddsItsTokensPerAgent() {
+    RunProvenance runProvenance = new RunProvenance();
+    runProvenance.modelResponded(
+        "supervisor", modelResponse("claude-haiku-5-5", new TokenUsage(1000, 50)));
+    runProvenance.modelResponded(
+        "filings", modelResponse("claude-sonnet-5-5", new TokenUsage(700, 40)));
+    runProvenance.modelResponded(
+        "supervisor", modelResponse("claude-haiku-5-5", new TokenUsage(300, 20)));
+    runProvenance.modelResponded("classifier", modelResponse(null, new TokenUsage(120, 15)));
+
+    assertThat(runProvenance.modelByAgent())
+        .containsExactly(
+            Map.entry("supervisor", "claude-haiku-5-5"), Map.entry("filings", "claude-sonnet-5-5"));
+    assertThat(runProvenance.tokensByAgent())
+        .containsEntry("supervisor", new TokenCount(1300, 70))
+        .containsEntry("classifier", new TokenCount(120, 15));
   }
 }

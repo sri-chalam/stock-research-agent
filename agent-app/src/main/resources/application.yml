@@ -53,6 +53,14 @@ stock-agent:
       allowed-tools:
         - getHoldings
         - getWatchlist
+  # The prompt classifier: one LLM call per /api/chat prompt, before the Supervisor, returning the
+  # prompt's freshness class (REAL_TIME or CACHEABLE) and tickers. Not an agent: no tools, no memory.
+  # The prompt is read from prompts/<prompt-id>.txt.
+  classifier:
+    model: claude-haiku-5-5
+    prompt-id: classifier-v1
+    max-tokens: 256
+    timeout: 10s
   # MCP servers the agents reach through the LangChain4j MCP client. The agent app fails to start
   # when any of them is unreachable, so start market-data-mcp, filings-mcp and portfolio-mcp first.
   mcp-servers:

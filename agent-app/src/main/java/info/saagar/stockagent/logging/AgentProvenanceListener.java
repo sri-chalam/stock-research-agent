@@ -13,13 +13,13 @@ import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Component;
 
 /// Records a [RunProvenance] per Supervisor run: the specialist agents called in order, the tools
-/// each one called, and the tokens each agent used.
+/// each one called, and the tokens and model each agent used.
 ///
 /// Registered on the Supervisor and inherited by its specialist agents. A run is keyed by its
 /// agentic scope's memory ID, which is a fresh UUID for each request because the Supervisor has no
-/// memory. Token counts come from the [ChatModelListener] that [#tokenListener(String)] returns,
-/// one per agent's chat model. The caller takes the run with [#takeRunProvenance(AgenticScope)]
-/// when the Supervisor returns; a run that fails is dropped.
+/// memory. Token counts and model names come from the [ChatModelListener] that
+/// [#tokenListener(String)] returns, one per agent's chat model. The caller takes the run with
+/// [#takeRunProvenance(AgenticScope)] when the Supervisor returns; a run that fails is dropped.
 @Component
 public class AgentProvenanceListener implements AgentListener {
 
@@ -65,8 +65,8 @@ public class AgentProvenanceListener implements AgentListener {
     return true;
   }
 
-  /// Returns a listener for one agent's chat model that adds each response's tokens to the current
-  /// run under that agent's name.
+  /// Returns a listener for one agent's chat model that adds each response's tokens and model name
+  /// to the current run under that agent's name.
   ///
   /// The run is the agentic scope that `langchain4j-agentic` binds to the calling thread around
   /// every planner and specialist LLM call (`LangChain4jManaged`, an internal API of the beta
@@ -81,8 +81,7 @@ public class AgentProvenanceListener implements AgentListener {
       public void onResponse(ChatModelResponseContext responseContext) {
         AgenticScope agenticScope = LangChain4jManaged.current(AgenticScope.class);
         if (agenticScope != null) {
-          runProvenance(agenticScope)
-              .tokensUsed(agentName, responseContext.chatResponse().tokenUsage());
+          runProvenance(agenticScope).modelResponded(agentName, responseContext.chatResponse());
         }
       }
     };

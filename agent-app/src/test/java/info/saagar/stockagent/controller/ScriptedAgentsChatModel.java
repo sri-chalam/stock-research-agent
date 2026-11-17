@@ -9,9 +9,12 @@ import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.model.chat.request.ChatRequest;
 import dev.langchain4j.model.chat.response.ChatResponse;
+import dev.langchain4j.model.output.TokenUsage;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.config.PortfolioAgentConfig;
+import info.saagar.stockagent.config.PromptClassifierConfig;
+import info.saagar.stockagent.config.SupervisorAgentConfig;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -19,7 +22,10 @@ import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Fake model that plays both the Supervisor's planner and the specialist agents.
+/// Fake model that plays the prompt classifier, the Supervisor's planner and the specialist agents.
+/// Every response names [#FAKE_MODEL_NAME] as its model and reports [#FAKE_TOKEN_USAGE].
+///
+/// As the classifier, it returns `REAL_TIME` with the symbol as the only ticker.
 ///
 /// As the planner, it sends the user's request to each specialist in its script, one per planning
 /// call, then replies `done` with a merged response holding every specialist's answer. This depends
@@ -30,6 +36,12 @@ import tools.jackson.databind.json.JsonMapper;
 /// with no arguments for the Portfolio agent, `getQuote` for the Market data agent) for the symbol,
 /// then answers with the tool result text.
 class ScriptedAgentsChatModel implements ChatModel {
+
+  /// Model name every fake response reports.
+  static final String FAKE_MODEL_NAME = "claude-haiku-5-5";
+
+  /// Tokens every fake response reports.
+  static final TokenUsage FAKE_TOKEN_USAGE = new TokenUsage(100, 10);
 
   private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
   private static final Pattern USER_REQUEST = Pattern.compile("The user request is: '(.*?)'\\.");
@@ -74,9 +86,38 @@ class ScriptedAgentsChatModel implements ChatModel {
         symbolToRequest);
   }
 
+  /// Returns which agent, or the classifier, a request comes from, read from its system message.
+  static String agentNameFor(ChatRequest chatRequest) {
+    String systemText = systemText(chatRequest.messages());
+    if (systemText.contains("prompt classifier")) {
+      return PromptClassifierConfig.CLASSIFIER_NAME;
+    }
+    if (systemText.contains("planner")) {
+      return SupervisorAgentConfig.SUPERVISOR_AGENT_NAME;
+    }
+    if (systemText.contains("Portfolio agent")) {
+      return PortfolioAgentConfig.PORTFOLIO_AGENT_NAME;
+    }
+    return systemText.contains("Filings analyst")
+        ? FilingsAgentConfig.FILINGS_AGENT_NAME
+        : MarketDataAgentConfig.MARKET_DATA_AGENT_NAME;
+  }
+
+  /// A classifier reply with the given freshness class and tickers.
+  static ChatResponse classifierReply(String freshnessClass, List<String> tickers) {
+    return respond(
+        AiMessage.from(
+            JSON_MAPPER.writeValueAsString(
+                Map.of("freshness", freshnessClass, "tickers", tickers))));
+  }
+
   @Override
   public ChatResponse doChat(ChatRequest chatRequest) {
     String systemText = systemText(chatRequest.messages());
+    if (systemText.contains("prompt classifier")) {
+      return classifierReply(
+          "REAL_TIME", symbolToRequest.isEmpty() ? List.of() : List.of(symbolToRequest));
+    }
     if (systemText.contains("planner")) {
       return plan(chatRequest.messages());
     }
@@ -117,21 +158,25 @@ class ScriptedAgentsChatModel implements ChatModel {
                 "done",
                 "arguments",
                 Map.of("response", "Merged: " + String.join(" | ", lastResponses)));
-    return ChatResponse.builder()
-        .aiMessage(AiMessage.from(JSON_MAPPER.writeValueAsString(agentInvocation)))
-        .build();
+    return respond(AiMessage.from(JSON_MAPPER.writeValueAsString(agentInvocation)));
   }
 
   private static ChatResponse answerAsSpecialist(
       List<ChatMessage> messages, String toolName, String toolArguments) {
     if (messages.getLast() instanceof ToolExecutionResultMessage toolResult) {
-      return ChatResponse.builder()
-          .aiMessage(AiMessage.from("Result: " + toolResult.text()))
-          .build();
+      return respond(AiMessage.from("Result: " + toolResult.text()));
     }
     ToolExecutionRequest toolRequest =
         ToolExecutionRequest.builder().id("call-1").name(toolName).arguments(toolArguments).build();
-    return ChatResponse.builder().aiMessage(AiMessage.from(toolRequest)).build();
+    return respond(AiMessage.from(toolRequest));
+  }
+
+  private static ChatResponse respond(AiMessage aiMessage) {
+    return ChatResponse.builder()
+        .aiMessage(aiMessage)
+        .modelName(FAKE_MODEL_NAME)
+        .tokenUsage(FAKE_TOKEN_USAGE)
+        .build();
   }
 
   private static String systemText(List<ChatMessage> messages) {

@@ -6,9 +6,12 @@ import dev.langchain4j.service.tool.ToolExecution;
 import info.saagar.stockagent.agent.FilingsAgent;
 import info.saagar.stockagent.agent.MarketDataAgent;
 import info.saagar.stockagent.agent.PortfolioAgent;
+import info.saagar.stockagent.classifier.ClassifiedPrompt;
+import info.saagar.stockagent.classifier.PromptClassifier;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.config.PortfolioAgentConfig;
+import info.saagar.stockagent.config.PromptClassifierConfig;
 import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.logging.AgentProvenanceListener;
 import info.saagar.stockagent.logging.RunProvenance;
@@ -31,7 +34,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Synchronous chat endpoint backed by the Supervisor, which delegates to the specialist agents.
+/// Synchronous chat endpoint: classifies each prompt, then answers it with the Supervisor, which
+/// delegates to the specialist agents.
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
@@ -48,19 +52,26 @@ public class ChatController {
   /// Accepted `X-User-Id` values; any other value is rejected with 400.
   private static final String USER_ID_PATTERN = "^[A-Za-z0-9-]{1,64}$";
 
+  /// Cache outcome of every request until the semantic cache exists.
+  private static final String CACHE_OUTCOME_SKIPPED = "SKIPPED";
+
+  private final PromptClassifier promptClassifier;
   private final SupervisorAgent supervisorAgent;
   private final AgentProvenanceListener agentProvenanceListener;
   private final JsonMapper jsonMapper;
 
   /// Creates the controller.
   ///
+  /// @param promptClassifier classifies each prompt's freshness and tickers before the Supervisor
   /// @param supervisorAgent agent that answers prompts through the specialist agents
   /// @param agentProvenanceListener records which specialists, tools and tokens each run used
   /// @param jsonMapper mapper used to parse tool-call arguments
   public ChatController(
+      PromptClassifier promptClassifier,
       SupervisorAgent supervisorAgent,
       AgentProvenanceListener agentProvenanceListener,
       JsonMapper jsonMapper) {
+    this.promptClassifier = promptClassifier;
     this.supervisorAgent = supervisorAgent;
     this.agentProvenanceListener = agentProvenanceListener;
     this.jsonMapper = jsonMapper;
@@ -84,7 +95,7 @@ public class ChatController {
   /// @param toolsCalled tools called, in order
   public record ChatResponse(String answer, List<ToolCall> toolsCalled) {}
 
-  /// Answers a prompt with the Supervisor.
+  /// Classifies a prompt, then answers it with the Supervisor.
   ///
   /// The user ID goes into the MDC for the run, and from there only onto MCP calls to
   /// `portfolio-mcp` ([McpUserHeaders]); it never enters the prompt (SEC-4).
@@ -107,10 +118,16 @@ public class ChatController {
 
   private ChatResponse answer(String message) {
     long startNanos = System.nanoTime();
+    ClassifiedPrompt classifiedPrompt = promptClassifier.classify(message);
+    logCacheLookupSkipped(classifiedPrompt);
     ResultWithAgenticScope<String> supervisorResult =
         supervisorAgent.invokeWithAgenticScope(message);
     RunProvenance runProvenance =
         agentProvenanceListener.takeRunProvenance(supervisorResult.agenticScope());
+    if (classifiedPrompt.classifierResponse() != null) {
+      runProvenance.modelResponded(
+          PromptClassifierConfig.CLASSIFIER_NAME, classifiedPrompt.classifierResponse());
+    }
     List<ToolCall> toolsCalled =
         runProvenance.agentCalls().stream()
             .flatMap(
@@ -129,8 +146,24 @@ public class ChatController {
         ToolArguments.parse(jsonMapper, toolExecution.request().arguments()));
   }
 
-  /// Logs the one `answerProvenance` line that says which agents, prompts and tools made the answer
-  /// and how many tokens each agent used.
+  /// Logs the cache decision. Every request skips the cache until the semantic cache exists.
+  private static void logCacheLookupSkipped(ClassifiedPrompt classifiedPrompt) {
+    log.atInfo()
+        .addKeyValue("eventName", "semanticCacheLookup")
+        .addKeyValue(
+            "eventData",
+            Map.of(
+                "cacheOutcome",
+                CACHE_OUTCOME_SKIPPED,
+                "freshnessClass",
+                classifiedPrompt.freshnessClass(),
+                "tickers",
+                classifiedPrompt.tickers()))
+        .log("Semantic cache lookup");
+  }
+
+  /// Logs the one `answerProvenance` line that says which agents, prompts and tools made the
+  /// answer, which model answered each agent and the classifier, and how many tokens each used.
   private static void logAnswerProvenance(RunProvenance runProvenance, long startNanos) {
     List<Map<String, Object>> agentsUsed =
         runProvenance.agentCalls().stream()
@@ -155,6 +188,8 @@ public class ChatController {
     provenanceData.put("agentName", SupervisorAgentConfig.SUPERVISOR_AGENT_NAME);
     provenanceData.put("promptId", SupervisorAgentConfig.SUPERVISOR_PROMPT_ID);
     provenanceData.put("agentsUsed", agentsUsed);
+    provenanceData.put("cacheOutcome", CACHE_OUTCOME_SKIPPED);
+    provenanceData.put("modelByAgent", runProvenance.modelByAgent());
     provenanceData.put("tokensByAgent", tokensByAgent);
     provenanceData.put("totalInputTokens", totalTokens.inputTokens());
     provenanceData.put("totalOutputTokens", totalTokens.outputTokens());

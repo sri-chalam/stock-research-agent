@@ -1,5 +1,6 @@
 package info.saagar.stockagent.logging;
 
+import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.model.output.TokenUsage;
 import dev.langchain4j.service.tool.ToolExecution;
 import java.util.ArrayList;
@@ -9,7 +10,8 @@ import java.util.Map;
 import java.util.Objects;
 
 /// What one Supervisor run did: the specialist agents it called in order, the tools each call made,
-/// and the tokens each agent used.
+/// and the tokens and model each agent used. `ChatController` adds the prompt classifier's tokens
+/// and model, because the classifier runs before the Supervisor run exists.
 ///
 /// Fed by [AgentProvenanceListener] while the run executes. A run's events arrive one at a time,
 /// because the Supervisor calls one specialist at a time on the request thread.
@@ -17,6 +19,7 @@ public final class RunProvenance {
 
   private final List<AgentCall> agentCalls = new ArrayList<>();
   private final Map<String, TokenCount> tokensByAgent = new LinkedHashMap<>();
+  private final Map<String, String> modelByAgent = new LinkedHashMap<>();
 
   /// One specialist agent invocation and the tools it called.
   ///
@@ -62,6 +65,18 @@ public final class RunProvenance {
         .add(toolExecution);
   }
 
+  /// Records one LLM response: adds its tokens to the agent that made the call and records the
+  /// model that answered, as named in the response metadata.
+  ///
+  /// @param agentName the agent whose chat model was called, e.g. `supervisor`
+  /// @param chatResponse the model's response
+  public void modelResponded(String agentName, ChatResponse chatResponse) {
+    tokensUsed(agentName, chatResponse.tokenUsage());
+    if (chatResponse.modelName() != null) {
+      modelByAgent.put(agentName, chatResponse.modelName());
+    }
+  }
+
   /// Adds one LLM call's tokens to the agent that made it. Missing counts count as zero.
   ///
   /// @param agentName the agent whose chat model was called, e.g. `supervisor`
@@ -88,6 +103,13 @@ public final class RunProvenance {
   /// @return tokens per agent name
   public Map<String, TokenCount> tokensByAgent() {
     return new LinkedHashMap<>(tokensByAgent);
+  }
+
+  /// Returns the model that answered each agent, in the order the agents first reported a model.
+  ///
+  /// @return model name per agent name; an agent whose responses named no model is absent
+  public Map<String, String> modelByAgent() {
+    return new LinkedHashMap<>(modelByAgent);
   }
 
   /// Returns the tokens all agents used together.

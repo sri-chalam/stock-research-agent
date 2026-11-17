@@ -63,6 +63,7 @@ Package by layer under `info.saagar.stockagent`:
 |---|---|
 | `controller` | REST controllers and their request/response records (e.g. `ChatController`) |
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`, `PortfolioAgent`) |
+| `classifier` | The prompt classifier, which is not an agent: its AI service (`ClassifierAiService`), output records (`Classification`, `FreshnessClass`, `ClassifiedPrompt`) and `PromptClassifier`, which validates tickers and falls back to `REAL_TIME` |
 | `tool` | Tool-call helpers (`ToolArguments`, `McpUserHeaders`: forwards the chat user's `X-User-Id` on MCP calls to `portfolio-mcp` only). agent-app has no `@Tool` classes: tools come from MCP servers |
 | `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`) |
 | `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `RunProvenance`, `McpCorrelationHeaders`) |
