@@ -8,7 +8,7 @@
 
 ## Decisions
 
-- **Retrieval only.** The eval calls `searchFilings` (or the retrieval code behind it) directly. Answer-level evals (LLM output, trajectory, citations, LLM-as-judge) move to Iteration 3.
+- **Retrieval only.** The eval calls `searchFilings` (or the retrieval code behind it) directly. Answer-level evals (LLM output, trajectory, citations, LLM-as-judge) are deferred, with no iteration assigned.
 - **Cases:** about 10–15, stored as a JSON file in `filings-mcp` test resources. Each case has a `question`, a `ticker` and the expected `form` + `section`, e.g. "NVDA supply-chain risk" → 10-K Item 1A. Cover all five tickers and all four sections. Write the questions by hand. They contain no copied filing text.
 - **Metric:** a case passes when at least one of the top 5 results matches the expected form and section. Report recall@5 = passed / total, plus the cases that failed.
 - **Harness:** a JUnit 5 test tagged `@Tag("eval")`, excluded from `./gradlew build` and `./gradlew test`, and run by its own Gradle task (e.g. `./gradlew :filings-mcp:evalTest`). It runs against the ingested Postgres from Compose and reads connection settings from the same env vars as the app.

@@ -2,7 +2,7 @@
 
 ## Status
 
-Accepted
+Accepted. Amended in Iteration 4: `agent-app` moves to the glibc base (see **Amendment: agent-app on amazonlinux:2023**).
 
 ## Context
 
@@ -58,6 +58,15 @@ Built with `docker compose build --pull`, linux/arm64, on 2026-11-14. Sizes are 
 - In filings-mcp, a missing module surfaces as a `LinkageError` (`NoClassDefFoundError`, `UnsatisfiedLinkError`) on the ingestion thread. `FilingIngestion` catches only `RuntimeException`, so this kills the thread with a plain stderr stack trace (`Exception in thread`) and no `filingIngestionFailed` log line. Check the logs for these strings after changing the module list.
 - The Iteration 2b image build must also use `--pull`, or it reuses a stale cached `alpine:latest` or `amazonlinux:2023`.
 - Unpinned `alpine:latest` and `amazonlinux:2023` can change between builds. A new OS release could break an image without any change in this repository. This is accepted in exchange for automatic security fixes.
+
+## Amendment: agent-app on amazonlinux:2023
+
+From Iteration 4, `agent-app` embeds questions for the semantic cache with an in-process bge-small model, the same ONNX model `filings-mcp` uses. ONNX Runtime and the DJL tokenizer ship only glibc native libraries, so `agent-app` follows the **glibc base for filings-mcp** decision above:
+
+- The `jre` stage is `amazoncorretto:25-al2023`, and the final stage is `amazonlinux:2023`, with the `app` user and `/home/app` added by hand and `--enable-native-access=ALL-UNNAMED` in the entrypoint.
+- `market-data-mcp` and `portfolio-mcp` stay on `alpine:latest`; they load no native libraries.
+- The module list is unchanged.
+- `agent-app`'s image grows beyond the 104 MB in the table above; its size is re-measured when the change lands.
 
 ## Alternatives considered
 

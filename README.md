@@ -10,18 +10,18 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 
 This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
 
-> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 1b. Some goals may change or be dropped.
+> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 4. Some goals may change or be dropped.
 
 Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
 
 | # | Area | What to explore | Status |
 |---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent, Filings analyst and Portfolio agent |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | 🚧 `market-data-mcp`; `filings-mcp` (`listFilings`, `getCompanyFacts`) |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`); `portfolio-mcp` (`getHoldings`, `getWatchlist`) |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
-| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | ⏳ |
-| 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
+| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
+| 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ✅ |
 | 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
 | 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
 | 9 | Guardrails | Prompt-injection checks, news and filing text treated as untrusted input, refusal of buy/sell advice | ⏳ |
@@ -32,8 +32,8 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 14 | Cost control | Prompt caching, token and cost per agent, Haiku vs Sonnet chosen per agent | ⏳ |
 | 15 | Chat GUI | One `index.html` with streamed answers (SSE) and an agent/tool trace panel | ⏳ |
 | 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
-| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs only |
-| 18 | Intent and freshness classifier | Route each question to a direct quote lookup, the cache or the multi-agent flow | ❓ |
+| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs, Loki/Grafana log search |
+| 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
 | 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
 
 Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own.
@@ -54,6 +54,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 ./gradlew :agent-app:bootRun        # start the agent app (127.0.0.1:8080)
 ./gradlew :market-data-mcp:bootRun  # start the market-data MCP server (127.0.0.1:8081)
 ./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
+./gradlew :portfolio-mcp:bootRun    # start the portfolio MCP server (127.0.0.1:8084)
 ```
 
 ## Project layout
@@ -62,6 +63,7 @@ Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the
 agent-app/         agent app (info.saagar.stockagent)
 market-data-mcp/   market-data MCP server (info.saagar.stockagent.marketdata)
 filings-mcp/       SEC filings MCP server (info.saagar.stockagent.filings)
+portfolio-mcp/     portfolio MCP server (info.saagar.stockagent.portfolio)
 common/            code and config (common.yml) shared by the apps (info.saagar.stockagent.common)
 buildSrc/          Gradle convention plugins
 gradle/libs.versions.toml   dependency version catalog
@@ -76,12 +78,12 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `agent-app` | 8080 | `/api/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
-| `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
+| `portfolio-mcp` | 8084 | `/mcp` | Built (Iteration 3b) |
 | Grafana (Compose only) | 3000 | `/explore` | Built (Iteration 2a) |
 
 ## Run locally
 
-Three apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Supervisor (Claude Haiku 5.5), which sends each part of the question to a specialist agent and merges their answers. The Market data agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
+Four apps run side by side. `agent-app` receives the chat request (`POST /api/chat`) and runs the Supervisor (Claude Haiku 5.5), which sends each part of the question to a specialist agent and merges their answers. The Market data agent answers with the tools on `market-data-mcp`, called over MCP: `getQuote`, `getCompanyProfile`, `getCompanyNews`, `getMarketNews`, `getEarningsCalendar` and `getBasicFinancials`. `market-data-mcp` fetches the data from Finnhub and returns trimmed results to the agent:
 
 ```
 curl → agent-app :8080 (/api/chat, Supervisor → Market data agent) → MCP client → market-data-mcp :8081 (/mcp, market-data tools) → Finnhub API
@@ -94,6 +96,12 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
                                                                                                        └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
+The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. The user comes from the optional `X-User-Id` header on `POST /api/chat` (`alice` or `bob` in the seed data). `agent-app` forwards it only on MCP calls to `portfolio-mcp`, never to the other MCP servers and never in prompt text. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
+
+```
+curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfolio agent) → MCP client + X-User-Id → portfolio-mcp :8084 (/mcp, portfolio tools) → Postgres (portfolio schema)
+```
+
 ### 1. Set environment variables
 
 | Variable | Used by | Required |
@@ -103,18 +111,21 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
 | `ANTHROPIC_API_KEY` | `agent-app` | Yes |
 | `MARKET_DATA_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8081/mcp` |
 | `FILINGS_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8082/mcp` |
+| `PORTFOLIO_MCP_URL` | `agent-app` | No; defaults to `http://localhost:8084/mcp` |
 | `FILINGS_DB_PASSWORD` | `filings-mcp`, `postgres` | With Gradle, yes: the password of the `filings_mcp` database user. Compose defaults it to `filings-local-dev` |
+| `PORTFOLIO_DB_PASSWORD` | `portfolio-mcp`, `postgres` | With Gradle, yes: the password of the `portfolio_mcp` database user. Compose defaults it to `portfolio-local-dev` |
+| `SEM_CACHE_DB_PASSWORD` | `agent-app`, `postgres` | With Gradle, yes: the password of the `sem_cache` database user (semantic cache). Compose defaults it to `sem-cache-local-dev` |
 | `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
 ### 2. Start the servers
 
-Use either Gradle or Docker Compose. Both bind ports 8080, 8081 and 8082 on `127.0.0.1`, so run only one of them at a time.
+Use either Gradle or Docker Compose. Both bind ports 8080, 8081, 8082 and 8084 on `127.0.0.1`, so run only one of them at a time.
 
 #### Option A: Gradle, MCP servers first
 
-`agent-app` fails to start when `market-data-mcp` or `filings-mcp` is unreachable.
+`agent-app` fails to start when Postgres (its semantic cache), `market-data-mcp`, `filings-mcp` or `portfolio-mcp` is unreachable.
 
 ```bash
 # terminal 1
@@ -127,27 +138,32 @@ export SEC_USER_AGENT="stock-research-agent you@example.com"
 export FILINGS_DB_PASSWORD=filings-local-dev
 ./gradlew :filings-mcp:bootRun
 
-# terminal 3 (after both MCP servers have started)
+# terminal 3: portfolio-mcp also needs the Compose Postgres
+export PORTFOLIO_DB_PASSWORD=portfolio-local-dev
+./gradlew :portfolio-mcp:bootRun
+
+# terminal 4 (after all three MCP servers have started)
 export ANTHROPIC_API_KEY=...
+export SEM_CACHE_DB_PASSWORD=sem-cache-local-dev
 ./gradlew :agent-app:bootRun
 ```
 
 #### Option B: Docker Compose
 
-Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` after Postgres is healthy, and `agent-app` after `market-data-mcp` and `filings-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, and `filings-mcp` re-ingests on its next start.
+Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after Postgres is healthy and `market-data-mcp`, `filings-mcp` and `portfolio-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, with the semantic cache's answers, and `filings-mcp` re-ingests on its next start.
 
 ```bash
 cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
 
 docker compose build --pull     # build the images; --pull refreshes the unpinned alpine:latest and amazonlinux:2023 bases (ADR 0012)
-docker compose up -d            # start the three apps, Postgres and log search
-docker compose ps               # all services Up; both MCP servers show (healthy)
+docker compose up -d            # start the four apps, Postgres and log search
+docker compose ps               # all services Up; the three MCP servers show (healthy)
 docker compose logs -f          # follow all apps' logs (Ctrl+C stops following, not the apps)
 
 docker compose down             # stop and remove the containers and the network
 ```
 
-Leave out `-d` to run in the foreground; Ctrl+C then stops all three apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp` and `http://filings-mcp:8082/mcp`. The sample prompts and `curl` calls below work unchanged.
+Leave out `-d` to run in the foreground; Ctrl+C then stops all four apps. Inside Compose, `agent-app` reaches the MCP servers at `http://market-data-mcp:8081/mcp`, `http://filings-mcp:8082/mcp` and `http://portfolio-mcp:8084/mcp`. The sample prompts and `curl` calls below work unchanged.
 
 #### Log search (Iteration 2a)
 
@@ -270,6 +286,78 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 # {"answer":"...","toolsCalled":[{"agentName":"filings","name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
 ```
 
+**`getHoldings`** (Portfolio agent): the user's holdings, ticker and shares. The user comes from the `X-User-Id` header (`alice` or `bob`), never from the prompt.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What stocks do I hold?"}'
+# {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getHoldings","arguments":{}}]}
+```
+
+**`getWatchlist`** (Portfolio agent): the tickers on the user's watchlist.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: bob' \
+  -d '{"message":"What'\''s on my watchlist?"}'
+# {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getWatchlist","arguments":{}}]}
+```
+
+**Both portfolio tools in one question**
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What do I hold, and what is on my watchlist?"}'
+# toolsCalled includes getHoldings and getWatchlist
+```
+
+**Holdings, then their quotes** (Portfolio agent, then Market data agent). The `answerProvenance` log line lists the `portfolio` agent first, then `market-data` with one `getQuote` per held ticker.
+
+```bash
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"How are my holdings doing today?"}'
+# toolsCalled: getHoldings (portfolio), then getQuote for AAPL, MSFT and NVDA (market-data)
+```
+
+**No user, or an invalid one**
+
+```bash
+# Without X-User-Id, the answer relays "No user identified; send X-User-Id"
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What do I hold?"}'
+
+# An X-User-Id that does not match ^[A-Za-z0-9-]{1,64}$ returns 400
+curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice;bob' \
+  -d '{"message":"What do I hold?"}'
+```
+
+**Semantic cache**: a `CACHEABLE` question gets an earlier answer back when a similar question named the same tickers within the TTL. `"cached"` in the response shows whether the answer came from the cache.
+
+```bash
+# Paraphrase: the first call runs the agents and stores the answer; the second is served from the cache
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What risks does Apple list in its latest 10-K?"}'
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are Apple'\''s 10-K risk factors?"}'
+# {"answer":"...","toolsCalled":[],"cached":true}
+
+# Different ticker set: a miss, so the agents run
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"What are Microsoft'\''s 10-K risk factors?"}'
+# "cached":false
+
+# REAL_TIME question: the cache is skipped every time
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+  -d '{"message":"Price of Apple"}'
+# "cached":false
+
+# Portfolio answer: never stored, so repeating it runs the agents again
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"message":"What stocks do I hold?"}'
+# "cached":false
+```
+
+In Grafana, `{service="agent-app"} | json | eventName=~"semanticCache.*"` shows each lookup's `cacheOutcome` (`HIT`, `MISS`, `SKIPPED`) and similarity, and why a store was skipped.
+
 ### 4. Call the MCP tools directly (optional)
 
 To check a tool's output without the agent or the model, send JSON-RPC to `market-data-mcp`. The server is stateless, so no `initialize` call is needed. JSON-RPC ids must be numbers.
@@ -288,9 +376,21 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"getMarketNews","arguments":{"category":"crypto"}}}'
 ```
 
+`portfolio-mcp` serves `getHoldings` and `getWatchlist` for two seeded users, `alice` and `bob`. Neither tool takes arguments: the user comes from the `X-User-Id` header (replaced by the token's `sub` in Iteration 5). `schema.sql` and `data.sql` create and seed the tables on every start without duplicating rows.
+
+```bash
+# alice's holdings: [{"ticker":"AAPL","shares":50},...]; send bob for bob's
+curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"getHoldings","arguments":{}}}'
+
+# Without X-User-Id: "isError": true, "No user identified; send X-User-Id"
+curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"getWatchlist","arguments":{}}}'
+```
+
 ### Notes
 
-- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.market-data`, `stock-agent.agents.filings`).
+- Model, max tokens, timeout, max steps and the MCP tool allowlist are per agent in `agent-app/src/main/resources/application.yml` (`stock-agent.agents.supervisor`, `market-data`, `filings`, `portfolio`). The prompt classifier is configured under `stock-agent.classifier`, and the semantic cache (similarity threshold, TTL, store) under `stock-agent.semantic-cache`.
 - Compatibility confirmed: Spring Boot 4.1.2 with LangChain4j 1.23.0 (`langchain4j`, `langchain4j-anthropic`), wired manually without a starter. Beta modules `langchain4j-agentic` and `langchain4j-mcp` are pinned at 1.23.0-beta33 in `gradle/libs.versions.toml`.
 - Tests use a scripted fake `ChatModel` and fake Finnhub and EDGAR clients; no live model, Finnhub or EDGAR call.
 

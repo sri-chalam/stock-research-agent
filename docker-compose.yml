@@ -14,6 +14,8 @@ services:
       # Local-dev defaults; override them in .env.
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-postgres-local-dev}
       FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+      PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
+      SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
     volumes:
       - ./docker/postgres/initdb:/docker-entrypoint-initdb.d:ro
     healthcheck:
@@ -63,6 +65,27 @@ services:
       retries: 12
       start_period: 10s
 
+  portfolio-mcp:
+    build:
+      context: .
+      dockerfile: portfolio-mcp/Dockerfile
+    ports:
+      - "127.0.0.1:8084:8084"
+    environment:
+      SERVER_ADDRESS: 0.0.0.0
+      PORTFOLIO_DB_HOST: postgres
+      PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
+    # portfolio-mcp fails to start when Postgres is unreachable (schema.sql runs on startup).
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8084/actuator/health"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+      start_period: 10s
+
   agent-app:
     build:
       context: .
@@ -73,13 +96,20 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       STOCK_AGENT_MCP_SERVERS_MARKET_DATA_URL: http://market-data-mcp:8081/mcp
       STOCK_AGENT_MCP_SERVERS_FILINGS_URL: http://filings-mcp:8082/mcp
+      STOCK_AGENT_MCP_SERVERS_PORTFOLIO_URL: http://portfolio-mcp:8084/mcp
       # Only this service gets the Anthropic key.
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
-    # agent-app fails to start when either MCP server is unreachable.
+      SEM_CACHE_DB_HOST: postgres
+      SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
+    # agent-app fails to start when Postgres (semantic cache) or any MCP server is unreachable.
     depends_on:
+      postgres:
+        condition: service_healthy
       market-data-mcp:
         condition: service_healthy
       filings-mcp:
+        condition: service_healthy
+      portfolio-mcp:
         condition: service_healthy
 
   # Log search (ADR 0011): Alloy ships every container's stdout to Loki; Grafana queries Loki.

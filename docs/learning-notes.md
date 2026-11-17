@@ -68,6 +68,127 @@ ChatController → agent.chat(prompt)                        (AiServices proxy)
   - `agenticScope()`: the run's shared context. It holds the run's `memoryId` and the values agents read and write (for example, the `request` the planner hands a specialist).
 - In `ChatController`, the code after `invokeWithAgenticScope` calls no agents. It only reads what the listener recorded and builds the `toolsCalled` list for the response.
 
+## Supervisor
+
+Built in [SupervisorAgentConfig](../agent-app/src/main/java/info/saagar/stockagent/config/SupervisorAgentConfig.java) with `AgenticServices.supervisorBuilder()` (`langchain4j-agentic` `1.23.0-beta33`). Source of the behaviour below: `SupervisorPlanner`, `PlannerAgent` and `ResponseAgent` in that module.
+
+### The planner loop
+
+- The Supervisor is a loop around one LLM call, the planner (`PlannerAgent.plan`). Each planner call returns one JSON choice: a specialist agent's name and its arguments, or `done`.
+- After a specialist answers, the planner is called again with that answer as `lastResponse`, and picks another specialist or `done`. One prompt can reach several specialist agents, one at a time.
+- The planner keeps a chat memory for the run (`CHAT_MEMORY`, a 20-message window, the default). Later planner calls see the earlier specialists' answers too, not just the last one.
+- `max-steps: 4` (`maxAgentsInvocations`; library default 10) caps the specialist calls per run. When the cap is hit, the run stops without a `done` call and returns the last specialist's answer, whatever the response strategy.
+- The planner's system prompt is the library's own. Our [supervisor-v2](../agent-app/src/main/resources/prompts/supervisor-v2.txt) prompt is only appended to it as the "supervisor context". The planner sees each specialist as a card built from its `@Agent` name, description and arguments, so the description decides the routing.
+
+### What a specialist agent receives
+
+- A specialist gets the planner's sub-question, not the user's prompt. The planner writes `request` as an argument, and the library stores it in the agentic scope, where the specialist's `@V("request")` reads it.
+- Risk: the planner rewrites the question and can drop details, for example a fiscal year, a form type or "last 3 years". The specialist can't recover them; it never sees the original prompt. No log line records the sub-question; only the tool arguments in `toolExecuted` hint at it.
+
+### How the answers are merged
+
+The response strategy decides what the run returns once the planner says `done`:
+
+| Strategy | Returns | Extra LLM calls |
+|---|---|---|
+| `LAST` (library default) | The last specialist's answer only. In a combined question, the first specialist's answer is lost | None |
+| `SUMMARY` (ours) | The `response` argument of the planner's `done` choice: the planner's recap of every specialist's answer, from its chat memory | None. The recap rides on the `done` planner call, which runs under every strategy |
+| `SCORED` | Builds both, then a `ResponseAgent` call scores each against the user's prompt (0.0 to 1.0) and returns the higher one | One scoring call |
+
+- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v2` tells it to keep them exactly; nothing checks it (the Critic was dropped).
+
+### Runtime flow of a combined question
+
+"Apple's revenue for the last 3 fiscal years and its current price":
+
+```
+ChatController → supervisorAgent.invokeWithAgenticScope(prompt)   (fresh scope, random memoryId)
+  → planner call 1: agents list + prompt            → {filings, request: "Apple's revenue, last 3 fiscal years"}
+  → FilingsAgent.answer(request)                   (own LLM loop)
+      → getCompanyFacts(AAPL) via filings-mcp → answer with citations
+  → planner call 2: lastResponse = filings answer  → {market-data, request: "Current price of Apple (AAPL)"}
+  → MarketDataAgent.answer(request)                (own LLM loop)
+      → getQuote(AAPL) via market-data-mcp → answer
+  → planner call 3: lastResponse = price answer    → {done, response: merged recap}
+  → SUMMARY returns the recap → ChatController reads AgentProvenanceListener → answerProvenance
+```
+
+- A single-specialist question makes two planner calls (pick, then `done`); this one makes three.
+
+### Cost of the Supervisor's extra calls
+
+One run per prompt on Compose, all agents on `claude-haiku-5-5`, from ticket 02 (`answerProvenance`). Tokens are input / output. Single runs, so rough numbers.
+
+| Prompt | `supervisor` | Specialist agents | Total | Duration |
+|---|---|---|---|---|
+| "List Microsoft's recent 10-K filings" | 2,501 / 600 | 4,084 / 593 | 6,585 / 1,193 | 6,061 ms |
+| "Price of Apple" | 2,070 / 337 | 3,661 / 160 | 5,731 / 497 | 5,783 ms |
+| Revenue + current price (combined) | 3,886 / 528 | 8,737 / 515 | 12,623 / 1,043 | 9,657 ms |
+
+- The Supervisor is 31–38% of each run's input tokens. Most of it is fixed: the library's planner prompt, our supervisor context and the agent cards are sent on every planner call.
+- With `SUMMARY`, the Supervisor writes the final answer, so its output tokens match or beat the specialists'.
+- Planner calls run in series with the specialists, so each one adds a full LLM round trip to the run. `answerProvenance` logs only the run's total duration, not time per agent.
+- A quote bypass (FR-5) would remove the Supervisor's calls from "Price of Apple"-type prompts. It is deferred: in Iteration 4 these prompts are classified `REAL_TIME`, skip the semantic cache and still run the Supervisor.
+
+## Portfolio agent and user-scoped tools
+
+```
+POST /api/chat  X-User-Id: alice        (validated; invalid → 400)
+  → ChatController puts it in the MDC (userId)
+  → McpUserHeaders, on the portfolio-mcp client only → X-User-Id on tools/call
+  → portfolio-mcp McpController binds PortfolioUser.USER_ID (ScopedValue) → WHERE user_id = :userId
+```
+
+- The user ID never enters prompt text, so the model can't name or change it. `getHoldings` and `getWatchlist` take no arguments. Only the `portfolio-mcp` client sends the header, so `market-data-mcp` and `filings-mcp` never see it. In Iteration 5 the token's `sub` replaces the header, and `portfolio-mcp` reads it from the validated JWT instead of trusting a header.
+- "How are my holdings doing today?" chains two specialists: the planner calls the Portfolio agent, reads its tickers from `lastResponse`, then calls the Market data agent naming them. Two runs as `alice`, Haiku 5.5:
+
+| Run | Plan | Tokens (in / out) | Duration | Answer |
+|---|---|---|---|---|
+| 1 | Portfolio, then Market data once with 3 `getQuote` calls | 10,100 / 1,015 | 9,159 ms | All three holdings |
+| 2 | Portfolio, then Market data **three times**, one ticker each | 18,880 / 861 | 11,858 ms | NVDA only |
+
+- Run 2 hit `max-steps: 4` (1 + 3 specialist calls), so it stopped without `done` and returned the last specialist's answer. `supervisor-v2` says "naming every ticker", but the planner can still fan out per ticker; nothing enforces one call.
+- News agent dropped: it taught no new agentic concept; the news tools stay with the Market data agent.
+- Critic dropped: without raw tool outputs it could only check the Supervisor's copy of the numbers, a weak check.
+
+## Semantic cache
+
+Flow: classify → `REAL_TIME` skips the cache → embed (bge-small, in-process) → lookup (same ticker set, not expired, nearest row) → similarity ≥ 0.87 is a hit: stored answer, no agents → else run the Supervisor → store.
+
+- HNSW: approximate nearest-neighbour search over a graph instead of scanning every row. Trades exact recall for speed.
+- pgvector filters (`WHERE`) after the index scan, so a narrow filter on a big table can find nothing.
+- `<=>` is cosine distance; similarity = `1 - distance`.
+- Ticker filter: "AAPL margins" and "MSFT margins" embed above the threshold.
+- Portfolio answers are never stored, instead of keying by user: no cross-user leak, one shared cache.
+- A hit still costs the classifier call (~600 tokens) and one embedding (free, in-process).
+- Skipped: per-class TTLs, invalidation on a new filing, intent routing.
+
+Threshold calibration (bge-small, chosen 0.87):
+
+| Pairs | Similarity |
+|---|---|
+| Should hit (paraphrases) | 0.890–0.934 |
+| Should miss (same ticker, different question) | 0.655–0.848 |
+| False hit (one word swapped: 10-K → 10-Q, revenue → net income) | 0.882–0.964 |
+| False miss (`AAPL` vs "Apple", heavier rewording) | 0.643–0.854 |
+
+- No threshold separates them all: embeddings barely notice a one-word swap.
+
+## Model choice
+
+- Each agent's model is fixed in config, never picked at runtime. All on Haiku.
+- Supervisor moves to Sonnet only if Haiku misroutes or merges badly, worth the extra cost.
+
+Supervisor Haiku vs Sonnet (3 Iteration 3 prompts, cache off, one run each):
+
+| | Haiku | Sonnet |
+|---|---|---|
+| Routing and answers | Correct | Same |
+| Run cost | $0.0009–0.0020 | $0.0072–0.0150 (8–9×) |
+| Duration | 5.4–8.9 s | 6.1–9.1 s |
+
+Decision: Supervisor stays on Haiku: same routing and answers at 1/8 the cost.
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.

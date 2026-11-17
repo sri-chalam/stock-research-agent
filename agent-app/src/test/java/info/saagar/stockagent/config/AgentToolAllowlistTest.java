@@ -22,8 +22,8 @@ import org.springframework.core.io.ClassPathResource;
 
 /// Each agent sees only the tools on its allowlist in `application.yml`.
 ///
-/// One fake MCP server lists both servers' tools, so the only thing keeping a tool from an agent is
-/// its allowlist.
+/// One fake MCP server lists all three servers' tools, so the only thing keeping a tool from an
+/// agent is its allowlist.
 class AgentToolAllowlistTest {
 
   private static final Set<String> MARKET_DATA_TOOL_NAMES =
@@ -36,6 +36,7 @@ class AgentToolAllowlistTest {
           "getBasicFinancials");
   private static final Set<String> FILINGS_TOOL_NAMES =
       Set.of("listFilings", "getCompanyFacts", "searchFilings");
+  private static final Set<String> PORTFOLIO_TOOL_NAMES = Set.of("getHoldings", "getWatchlist");
   private static final ToolProviderRequest TOOL_PROVIDER_REQUEST =
       new ToolProviderRequest("memory-1", UserMessage.from("List Microsoft's recent 10-K filings"));
 
@@ -49,7 +50,9 @@ class AgentToolAllowlistTest {
           "getBasicFinancials",
           "listFilings",
           "getCompanyFacts",
-          "searchFilings");
+          "searchFilings",
+          "getHoldings",
+          "getWatchlist");
   private final McpClient sharedMcpClient =
       new McpClientConfig()
           .filingsMcpClient(
@@ -91,12 +94,22 @@ class AgentToolAllowlistTest {
   }
 
   @Test
-  void marketDataAgentSeesNoFilingsTools() throws IOException {
+  void marketDataAgentSeesNoFilingsOrPortfolioTools() throws IOException {
     Set<String> marketDataAgentToolNames =
         toolNames(
             new MarketDataAgentConfig()
                 .marketDataToolProvider(sharedMcpClient, configuredAgentProperties()));
 
     assertThat(marketDataAgentToolNames).isEqualTo(MARKET_DATA_TOOL_NAMES);
+  }
+
+  @Test
+  void portfolioAgentSeesOnlyPortfolioTools() throws IOException {
+    Set<String> portfolioAgentToolNames =
+        toolNames(
+            new PortfolioAgentConfig()
+                .portfolioToolProvider(sharedMcpClient, configuredAgentProperties()));
+
+    assertThat(portfolioAgentToolNames).isEqualTo(PORTFOLIO_TOOL_NAMES);
   }
 }

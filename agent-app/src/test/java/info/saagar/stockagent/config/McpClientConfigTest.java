@@ -87,4 +87,52 @@ class McpClientConfigTest {
     assertThat(fakeMcpServer.toolCallHeaders())
         .containsExactly(Map.of("X-Correlation-Id", "corr-123", "X-Trace-Id", "trace-456"));
   }
+
+  @Test
+  void marketDataToolCallDoesNotForwardTheUserId() {
+    ToolExecutor getQuoteExecutor =
+        marketDataToolsAllowing(List.of("getQuote")).toolExecutorByName("getQuote");
+    MDC.put("correlationId", "corr-123");
+    MDC.put("userId", "alice");
+
+    getQuoteExecutor.execute(
+        ToolExecutionRequest.builder()
+            .id("call-1")
+            .name("getQuote")
+            .arguments("{\"symbol\":\"AAPL\"}")
+            .build(),
+        "memory-1");
+
+    assertThat(fakeMcpServer.toolCallHeaders())
+        .containsExactly(Map.of("X-Correlation-Id", "corr-123"));
+  }
+
+  @Test
+  void portfolioToolCallForwardsTheUserIdAndCorrelationId() throws Exception {
+    try (FakeMcpServer fakePortfolioMcp = FakeMcpServer.start("getHoldings");
+        McpClient portfolioMcpClient =
+            mcpClientConfig.portfolioMcpClient(
+                new McpServerProperties(
+                    Map.of(
+                        McpClientConfig.PORTFOLIO_SERVER_NAME,
+                        new McpServerProperties.McpServerSettings(
+                            fakePortfolioMcp.url(), "2025-11-25", Duration.ofSeconds(5)))))) {
+      MDC.put("correlationId", "corr-123");
+      MDC.put("userId", "alice");
+
+      String holdingsText =
+          portfolioMcpClient
+              .executeTool(
+                  ToolExecutionRequest.builder()
+                      .id("call-1")
+                      .name("getHoldings")
+                      .arguments("{}")
+                      .build())
+              .resultText();
+
+      assertThat(holdingsText).isEqualTo(FakeMcpServer.HOLDINGS_TEXT);
+      assertThat(fakePortfolioMcp.toolCallHeaders())
+          .containsExactly(Map.of("X-Correlation-Id", "corr-123", "X-User-Id", "alice"));
+    }
+  }
 }

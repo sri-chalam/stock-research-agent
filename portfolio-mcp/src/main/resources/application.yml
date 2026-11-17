@@ -1,0 +1,26 @@
+spring:
+  application:
+    name: portfolio-mcp
+  config:
+    import: classpath:common.yml
+  # Postgres from docker-compose.yml, as the portfolio_mcp user, whose search_path is the portfolio
+  # schema. The password comes from the PORTFOLIO_DB_PASSWORD environment variable.
+  datasource:
+    url: jdbc:postgresql://${PORTFOLIO_DB_HOST:localhost}:${PORTFOLIO_DB_PORT:5432}/${PORTFOLIO_DB_NAME:stockagent}
+    username: ${PORTFOLIO_DB_USER:portfolio_mcp}
+    password: ${PORTFOLIO_DB_PASSWORD}
+  # schema.sql and data.sql run on every start; both are idempotent.
+  sql:
+    init:
+      mode: always
+
+server:
+  port: 8084
+  address: 127.0.0.1
+
+# Only /actuator/health is exposed; Docker Compose uses it as the healthcheck.
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health

@@ -4,7 +4,7 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions
 
@@ -13,9 +13,9 @@
 
 ## Acceptance criteria
 
-- [ ] Spec §14, Iteration 3: the acceptance criterion "Supervisor routes correctly per eval trajectory checks; cost/latency recorded" is replaced by the three-prompt check, with per-agent tokens and latency from `answerProvenance`.
-- [ ] Spec NFR-14 to NFR-16 and the spec's purpose line say evals are deferred with no iteration assigned.
-- [ ] Iteration 2 ticket 03 (retrieval eval) no longer says answer-level evals move to Iteration 3; it says they are deferred.
-- [ ] The edits use "Supervisor" and "specialist agent" as defined in the glossary.
+- [x] Spec §14, Iteration 3: the acceptance criterion "Supervisor routes correctly per eval trajectory checks; cost/latency recorded" is replaced by the three-prompt check, with per-agent tokens and latency from `answerProvenance`.
+- [x] Spec NFR-14 to NFR-16 and the spec's purpose line say evals are deferred with no iteration assigned.
+- [x] Iteration 2 ticket 03 (retrieval eval) no longer says answer-level evals move to Iteration 3; it says they are deferred.
+- [x] The edits use "Supervisor" and "specialist agent" as defined in the glossary.
 
 ## Comments

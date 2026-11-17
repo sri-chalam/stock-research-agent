@@ -5,7 +5,7 @@
 | **Repository** | `stock-research-agent` (private; may be made public later) |
 | **Owner** | Sri Chalam |
 | **Status** | Draft v1.0 — October 31, 2026 |
-| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals, resilience, observability, cost control and AWS deployment. |
+| **Purpose** | A realistic, production-style multi-agent AI application in Java that demonstrates Staff-level AI engineering skills: MCP tool calling, multi-agent orchestration, semantic caching, RAG, OAuth 2.1, gateways, evals (deferred; no iteration assigned yet), resilience, observability, cost control and AWS deployment. |
 
 > **Suggested GitHub description:** Multi-agent stock research and portfolio assistant in Java. Built with LangChain4j, MCP tool servers, RAG over SEC filings, semantic caching, and Claude. Deployed on AWS ECS via CDK.
 >
@@ -43,7 +43,7 @@ A signed-in user keeps a watchlist and a paper (simulated) portfolio, and can:
 - **Ask research questions** — e.g., "What did NVDA's last 10-K say about supply-chain risk, and how has gross margin trended?"
 - **Get quick facts** — e.g., "What is the stock price of Apple?"
 - **Receive a scheduled morning brief** — news, price moves, upcoming earnings and new filings for their holdings.
-- **Analyze portfolio risk** — e.g., "How exposed am I to semiconductors? What happens if rates rise 1%?"
+- **Check their portfolio** — e.g., "What do I hold, and how are my holdings doing today?"
 - **Place paper trades** — always behind explicit human approval.
 
 Every answer that contains facts or numbers cites its source (tool output or filing section).
@@ -70,7 +70,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 | US-1 | investor | ask for a current quote ("price of Apple") | I get a fast, live answer |
 | US-2 | investor | ask questions about a company's filings | I understand risks and trends with citations |
 | US-3 | investor | see recent news and sentiment for a ticker | I know what is moving the stock |
-| US-4 | investor | analyze my portfolio's sector exposure and what-if scenarios | I understand my risk |
+| US-4 | investor | ask about my holdings and watchlist, and how my holdings are doing today | I can follow my portfolio |
 | US-5 | investor | receive a morning brief for my holdings | I stay informed without asking |
 | US-6 | investor | place a paper trade that I must approve | nothing executes without my confirmation |
 | US-7 | investor | have the assistant remember my holdings and preferences | I don't repeat context |
@@ -112,14 +112,13 @@ flowchart TB
     subgraph APP[Agent App: Spring Boot 4.1.1 + LangChain4j]
       direction TB
       API[REST + SSE API<br/>Spring Security resource server]
-      CLS[Intent & freshness classifier]
+      CLS[Prompt classifier<br/>freshness + tickers]
       SC[Semantic cache]
       SUP[Supervisor agent]
       SPEC[Specialist agents]
-      CRIT[Critic agent]
       HITL[Pending actions / approvals]
       API --> CLS --> SC
-      SC -- miss --> SUP --> SPEC --> CRIT
+      SC -- miss --> SUP --> SPEC
       SUP --> HITL
     end
 
@@ -144,43 +143,39 @@ Before Iteration 6, the agent app connects to MCP servers and Anthropic directly
 
 ```mermaid
 flowchart TD
-    Q[User prompt] --> C{Classifier<br/>intent + freshness}
-    C -- "simple quote<br/>(real-time)" --> T[market-data-mcp getQuote<br/>no cache, no multi-agent]
-    C -- "research question" --> K{Semantic cache hit?<br/>static/daily class only}
-    K -- hit --> R[Return cached answer<br/>+ 'cached' marker]
-    K -- miss --> S[Supervisor]
+    Q[User prompt] --> C{Prompt classifier<br/>freshness + tickers}
+    C -- "REAL_TIME<br/>(or classifier failed)" --> S[Supervisor]
+    C -- "CACHEABLE" --> K{Semantic cache hit?<br/>same ticker set, similar enough, not expired}
+    K -- hit --> R[Return cached answer<br/>cached: true, no agents run]
+    K -- miss --> S
     S --> A1[Filings analyst]
     S --> A2[Market data agent]
-    S --> A3[News & sentiment agent]
-    S --> A4[Portfolio risk agent]
-    A1 & A2 & A3 & A4 --> S
-    S --> V[Critic: verify numbers<br/>against tool outputs]
-    V -- fail --> S
-    V -- pass --> O[Output guardrails] --> W[Store in cache if cacheable] --> Ans[Answer + citations + agent trace]
-    C -- "trade request" --> P[Create PendingAction<br/>await user approval]
+    S --> A3[Portfolio agent]
+    A1 & A2 & A3 --> S
+    S --> O[Output guardrails] --> W[Store in cache if CACHEABLE<br/>and no portfolio tool ran] --> Ans[Answer + citations + agent trace]
 ```
+
+Iteration 4 has no `QUOTE` bypass and no trade branch: every prompt that is not a cache hit runs the Supervisor. The direct quote path (FR-5) and the out-of-scope refusal (FR-6) are deferred; paper trades arrive in Iteration 7 through `proposePaperTrade`.
 
 ## 6. Agents
 
-### 6.1 Agent inventory — six LLM agents
+### 6.1 Agent inventory — four LLM agents
 
 | # | Agent | Responsibility | Tools / data | Default model | Build order |
 |---|---|---|---|---|---|
-| 1 | **Supervisor** | Understand request, plan, delegate to specialists, merge results | Specialist agents | Haiku 5.5 (Sonnet if evals require) | Iteration 3 |
+| 1 | **Supervisor** | Understand request, plan, delegate to specialists, merge results | Specialist agents | Haiku 5.5 (Sonnet compared manually in Iteration 4) | Iteration 3 |
 | 2 | **Filings analyst** | Answer from 10-K/10-Q/8-K via RAG, with section citations | filings-mcp, pgvector | Haiku 5.5 (Sonnet candidate) | Iteration 3 |
-| 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
-| 4 | **News & sentiment agent** | Summarize company/market news; treats articles as **untrusted input** | market-data-mcp (news) | Haiku 5.5 | Iteration 3b |
-| 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
-| 6 | **Critic** | Verify every number and claim in the draft answer against tool outputs before returning | Tool outputs of the run | Haiku 5.5 | Iteration 3d |
+| 3 | **Market data agent** | Quotes, fundamentals, earnings dates, company and market news; treats article text as **untrusted input** | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
+| 4 | **Portfolio agent** | Read the user's holdings and watchlist | portfolio-mcp (`getHoldings`, `getWatchlist`) | Haiku 5.5 | Iteration 3b |
 
-**Build sequence:** start with 3 agents (Supervisor, Filings, Market data), then add News, Risk and Critic one at a time, measuring cost and latency after each addition.
+**Build sequence:** start with 3 agents (Supervisor, Filings, Market data), then add the Portfolio agent in Iteration 3b, measuring cost and latency after the addition.
 
 ### 6.2 Components that are deliberately *not* agents
 
 | Component | Implementation | Why not an agent |
 |---|---|---|
-| Intent & freshness classifier | Single small LLM call (Haiku) with structured output | One decision, no loop needed |
-| Semantic cache | Code + embedding store | Deterministic |
+| Prompt classifier | Single small LLM call (Haiku) with structured output: a freshness class (`REAL_TIME` or `CACHEABLE`) and the prompt's tickers. No intent; it only decides whether the semantic cache is used | One decision, no loop needed |
+| Semantic cache | Code + own Postgres table + in-process embedding model | Deterministic |
 | Morning-brief scheduler | Spring `@Scheduled` / background job | Deterministic trigger |
 | Paper-trade approval | `PendingAction` table + REST endpoints | Must be deterministic |
 | MCP servers | Ordinary services | Expose tools; no reasoning |
@@ -191,7 +186,6 @@ flowchart TD
 - AG-2: Each agent's model is configurable in `application.yml`; model IDs are never hard-coded.
 - AG-3: Bounded autonomy per run: max steps (default 8), max tokens, wall-clock timeout, max cost.
 - AG-4: Loop detection: abort if the same tool is called with the same arguments more than twice.
-- AG-5: The Critic rejects answers containing numbers not present in tool outputs; the Supervisor gets one revision attempt, then returns a partial answer with a warning.
 - AG-6: Agent orchestration uses the LangChain4j agentic module (supervisor topology). **LangGraph4j is not required**; it is an optional comparison in Iteration 10.
 
 ## 7. MCP Servers and Data Sources
@@ -202,7 +196,7 @@ flowchart TD
 |---|---|---|---|
 | **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to, symbol?)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
 | **filings-mcp** | Iteration 1b: `listFilings(ticker, formType)` (`formType` required: `10-K`, `10-Q` or `8-K`), `getCompanyFacts(ticker)` (XBRL, fixed metrics). Iteration 2: `getFilingSection(ticker, accession, section)`, `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
-| **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
+| **portfolio-mcp** | Iteration 3b: `getHoldings()` (ticker and shares), `getWatchlist()` (tickers). Iteration 7: `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | None upstream. The user is identified by the `X-User-Id` request header before Iteration 5, then by the user token's `sub`; ownership enforced in code |
 
 Requirements:
 - MCP-1: Upstream API keys never leave the MCP server; they are never passed to the agent or the LLM.
@@ -229,22 +223,23 @@ Test fixtures use **synthetic data**, not recorded licensed data.
 - FR-2: Tool definitions are discovered from MCP servers on first use and cached; a restart of the agent app picks up tool changes (stateless servers cannot push change notifications).
 - FR-3: Each agent only receives the tools on its allowlist (in code before Iteration 6; via Bifrost virtual keys after).
 
-### 8.2 Intent and freshness classification
-- FR-4: Every prompt is classified into an **intent** (`QUOTE`, `RESEARCH`, `PORTFOLIO`, `TRADE`, `OUT_OF_SCOPE`) and a **freshness class**:
-  - `REAL_TIME` — prices, intraday moves → never cached
-  - `DAILY` — news summaries, daily briefs → cache until end of trading day
-  - `STATIC` — filing content, company descriptions → cache for days/weeks (invalidate on new filing)
-- FR-5: `QUOTE` intents bypass the multi-agent flow and call `getQuote` directly.
-- FR-6: `OUT_OF_SCOPE` requests (including requests for personalized buy/sell advice) receive a polite refusal explaining what the assistant can do.
+### 8.2 Prompt classification
+- FR-4: Every prompt is classified by the prompt classifier into a **freshness class** and the **tickers** it names (company names mapped to tickers, e.g. "Apple" → `AAPL`). There is no intent enum.
+  - `REAL_TIME` — prices, intraday moves → never cached; the cache is skipped in code
+  - `CACHEABLE` — anything else (news summaries, filing content, company descriptions) → cached for one fixed TTL (FR-10)
+
+  If the classifier call fails or returns an invalid ticker, the prompt is treated as `REAL_TIME`.
+- FR-5 *(deferred)*: Quote prompts bypass the multi-agent flow and call `getQuote` directly. Until then, quote prompts are `REAL_TIME` and run the Supervisor.
+- FR-6 *(deferred)*: Out-of-scope requests (including requests for personalized buy/sell advice) receive a polite refusal explaining what the assistant can do. Trade requests are handled by the agents through `proposePaperTrade` (Iteration 7), not by a classifier branch.
 
 ### 8.3 Semantic cache
-- FR-7: Before running agents for cacheable classes, embed the normalized question and search the cache.
-- FR-8: Cache key/filter includes **ticker(s)**, **freshness class**, and **user scope** for portfolio-specific questions (portfolio answers are never shared across users).
-- FR-9: Hit threshold (cosine similarity) is configurable; default 0.92, tuned via evals.
-- FR-10: TTL per freshness class; `STATIC` entries invalidated when a new filing for that ticker is detected.
-- FR-11: Cached answers are marked "cached" in the UI and trace.
-- FR-12: Metrics: hit rate, tokens saved, false-hit reports (user feedback).
-- Implementation: built on LangChain4j embedding-store abstraction (pgvector); custom code is acceptable and preferred for explainability.
+- FR-7: Before running agents for a `CACHEABLE` prompt, embed the normalized question and search the cache.
+- FR-8: A hit needs **exactly the same ticker set** as the stored answer (an empty set matches only an empty set). The key has **no user scope**: instead, an answer from a run that called a portfolio tool (`getHoldings`, `getWatchlist`) is **never stored**, so one user's portfolio answer cannot reach another user. Answers from runs with a failed tool call are not stored either.
+- FR-9: Hit threshold (cosine similarity) is configurable. It is set from a JUnit calibration test over hand-written question pairs (paraphrases that must hit, different questions that must miss), not from evals; 0.92 is only the starting value.
+- FR-10: One TTL for every cached answer (1 hour, in config). No end-of-trading-day expiry, no invalidation on a new filing, and no cleanup of expired rows.
+- FR-11: Cached answers are marked `cached: true` in the response and the trace.
+- FR-12: Cache outcome (`HIT`, `MISS`, `SKIPPED`), similarity and tokens saved are fields in log events, queried in Grafana/Loki. No dashboard, and no false-hit reports (deferred with user feedback).
+- Implementation: a custom table in its own `sem_cache` schema, queried with explicit SQL (not LangChain4j's `PgVectorEmbeddingStore`), with an in-process bge-small embedding model in `agent-app`.
 
 ### 8.4 RAG over SEC filings
 - FR-13: Ingestion pipeline downloads 10-K/10-Q for a configured ticker list (initially 5–10 tickers, a subset of the `filings-mcp` ticker→CIK map), parses into sections (Risk Factors, MD&A, etc.), chunks (300–1000 tokens with overlap), embeds and stores with metadata (ticker, form, fiscal period, section, accession number, URL).
@@ -388,7 +383,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-6: Prompt caching with a stable prefix (tool definitions → system prompt → examples first; volatile data last). Alert if cache hit rate drops.
 - NFR-7: Prompts kept under 100K tokens.
 - NFR-8: Tool outputs trimmed; history summarized.
-- NFR-9: Dashboard: tokens in/out/cached per agent, cost per request, cost per user per day, semantic-cache savings.
+- NFR-9 *(deferred)*: Dashboard: tokens in/out/cached per agent, cost per request, cost per user per day, semantic-cache savings. Until then, token and cache fields are in log events and queried in Grafana/Loki.
 - NFR-10: AWS Budget alert (e.g., $10/month). A lower threshold (e.g., $5) is created before the first deployment in Iteration 2b.
 
 ### 12.3 Observability
@@ -396,14 +391,17 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-12: Structured JSON logs with trace IDs; PII and secrets redacted.
 - NFR-12a: Locally, every container's logs are searchable in a browser through Grafana and Loki. Only `service` (the compose service name, equal to each app's `spring.application.name`) and `level` (as emitted, e.g. `INFO`) are Loki labels; `correlationId`, `traceId` and `eventName` stay JSON fields (ADR 0011).
 - NFR-12b: In AWS, ECS tasks log to CloudWatch through the `awslogs` driver, one log group per service (`/stock-agent/<service>`), with 1-day retention and `RemovalPolicy.DESTROY`; logs are searched with CloudWatch Logs Insights (ADR 0011).
-- NFR-13: Metrics and alerts: error rate, p95 latency, retries, circuit-breaker state, guardrail blocks, loop-limit hits, Critic rejections.
+- NFR-13: Metrics and alerts: error rate, p95 latency, retries, circuit-breaker state, guardrail blocks, loop-limit hits.
 - NFR-13a: Each run ends with one structured log line (`eventName` `answerProvenance`) listing the agents and tools that produced the answer, with the trace ID, so one query answers US-8.
 
 ### 12.4 Quality and evals
+
+> **Deferred:** NFR-14 to NFR-16 are deferred and have no iteration assigned. Iteration 3 is accepted by a manual check instead (Section 14).
+
 - NFR-14: Golden eval set: ~40 questions at Iteration 2, growing to 100+ (quotes, filings, news, portfolio, adversarial/injection, out-of-scope).
 - NFR-15: Graders: XBRL number checks, citation presence, trajectory checks (expected agents/tools, no forbidden tools), schema checks, LLM-as-judge with binary criteria for answer quality.
 - NFR-16: Evals run in CI on every prompt, model or tool change; merge blocked below threshold.
-- NFR-17: Model routing decisions (Haiku vs Sonnet per agent) recorded with eval scores and cost.
+- NFR-17: Model routing decisions (Haiku vs Sonnet per agent) are recorded with cost and a quality note. Model IDs stay fixed per agent in config; in Iteration 4 one manual Supervisor comparison (Haiku vs Sonnet) is recorded in the learning notes. Eval-backed routing is deferred with NFR-14 to NFR-16.
 
 ### 12.5 Testing
 - NFR-18: Unit tests for tools, parsers, classifier mapping, cache logic.
@@ -451,9 +449,9 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **2** | RAG over filings | Ingestion for 5–10 tickers; hybrid search + rerank; citations; first eval set (~40 cases) | Filing questions answered with correct section citations; XBRL numbers match; eval suite runs locally |
 | **2a** | Log search | Local: Loki (no volume), Grafana Alloy and Grafana start with plain `docker compose up`; Alloy reads every container's stdout through the Docker socket and sets labels `service` (compose service name) and `level` (JSON apps only); Grafana with anonymous Admin on `127.0.0.1:3000` and a file-provisioned Loki data source; agent-app's `spring.application.name` renamed to `agent-app`. AWS: CloudWatch Logs through `awslogs` (built in 2b). See ADR 0011 | In Grafana Explore, `{service="filings-mcp"} \| json \| level="INFO" \|= "text"` returns matching lines; filtering on `correlationId` shows one request across all three apps; `{service="postgres"}` shows Postgres lines |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; a CloudWatch Logs Insights query filters one service's logs by level and text; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
-| **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Supervisor routes correctly per eval trajectory checks; cost/latency recorded |
-| **3b–3d** | Add agents | News & sentiment → Portfolio risk → Critic | Each addition has eval cases; Critic catches seeded wrong numbers |
-| **4** | Semantic cache + model routing | Intent/freshness classifier; freshness-aware cache; per-agent model config; token/cost dashboard | Real-time questions never cached; cache hit rate and tokens saved visible; Haiku vs Sonnet decision documented with eval numbers |
+| **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Manual check with three curl prompts (filings only, market data only, both): `answerProvenance` shows the Supervisor called the expected specialist agent(s), with tokens per agent (`tokensByAgent`) and run latency (`completeExecDurationTimeMs`) |
+| **3b** | `portfolio-mcp` + Portfolio agent | `portfolio-mcp` (port 8084) with `getHoldings` and `getWatchlist` read from Postgres, seeded with two users (`alice`, `bob`) and scoped by the `X-User-Id` header (replaced by the token's `sub` in Iteration 5); Portfolio agent (prompt `portfolio-agent-v1`, allowlist `getHoldings` and `getWatchlist`) joins the Supervisor (`supervisor-v2`); optional `X-User-Id` on `POST /api/chat`, forwarded only on MCP calls to `portfolio-mcp`, never in prompt text | `tools/list` returns exactly `getHoldings` and `getWatchlist`; each user sees only their own holdings and watchlist, both through `tools/call` and through "What stocks do I hold?" / "What's on my watchlist?" on `POST /api/chat`; without `X-User-Id` the tools return "No user identified; send X-User-Id" and the agent relays it, and an invalid header value returns 400; for "How are my holdings doing today?" `answerProvenance` shows the Portfolio agent first, then the Market data agent with `getQuote` per held ticker; only the Portfolio agent sees the portfolio tools; one request's `correlationId` appears in agent-app and `portfolio-mcp` logs, and the user ID does not reach `market-data-mcp` or `filings-mcp`; restarts do not duplicate seed rows; `docker compose up` runs all four apps |
+| **4** | Prompt classifier + semantic cache | Prompt classifier returning a freshness class (`REAL_TIME`, `CACHEABLE`) and tickers, with no intent enum; semantic cache in its own `sem_cache` table with an in-process bge-small embedding model (`agent-app` moves to `amazonlinux:2023`, ADR 0012), exact ticker-set filter, one 1-hour TTL, and no store for runs that called a portfolio tool; similarity threshold from a JUnit calibration test; `modelByAgent` in `answerProvenance`, all agents on Haiku, plus one manual Supervisor Haiku/Sonnet comparison. Deferred: `QUOTE` bypass (FR-5), out-of-scope and trade handling (FR-6), per-class TTLs, token/cost dashboard (NFR-9), eval-based model routing (NFR-17) | 1. A filings question asked twice, reworded the second time: the first is a cache miss, the second returns `cached: true`, runs no agents and logs `tokensSaved` > 0. 2. "Price of Apple" twice: never cached, logged as `REAL_TIME` and `SKIPPED`. 3. "AAPL risk factors" then "MSFT risk factors": the second is a miss. 4. "What stocks do I hold?" as `alice` twice: both run agents; the store is skipped with a reason naming the portfolio tool. 5. After the TTL, the repeated question is a miss again. 6. The threshold calibration test passes, and its scores are in the learning notes. 7. `answerProvenance` shows `modelByAgent`, and the Supervisor Haiku/Sonnet comparison is in the learning notes. 8. `docker compose up` runs all four apps, with `agent-app` on `amazonlinux:2023` |
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
 | **7** | Human-in-the-loop + memory | Paper trades via `PendingAction` + approve/reject; long-term user memory | No trade executes without approval; expired actions cannot be approved; every action ends with a recorded status |
@@ -474,10 +472,10 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-4 | Free-tier data limits (Finnhub has no candles, so no price history) | Accept the limits; add a single history provider later if needed |
 | R-5 | Data licensing (Finnhub personal use only) | Keep repo free of recorded licensed data; no public hosted demo; share via video |
 | R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security. OSS Bifrost cannot validate WorkOS JWTs (Enterprise only), so MCP servers validate the user token (ADR 0001) |
-| R-7 | Haiku 5.5 sufficiency for Supervisor/Filings/Risk | Decide per agent using evals |
+| R-7 | Haiku 5.5 sufficiency for Supervisor/Filings | Manual Supervisor Haiku/Sonnet comparison in Iteration 4; per-agent evals once evals exist |
 | R-8 | Haiku 5.5 price jump above 100K-token prompts (cache reads count) | Enforce prompt-size budget; alert near threshold |
 | R-9 | Fargate Spot interruptions | Acceptable for a demo; tasks restart automatically |
-| R-10 | Semantic cache false hits returning wrong-ticker answers | Ticker and freshness filters; high threshold; feedback metric |
+| R-10 | Semantic cache false hits returning wrong-ticker answers | Exact ticker-set filter; `REAL_TIME` never cached; threshold from a calibration test |
 | Q-1 | Java 21 vs 25? | Decide in Iteration 0 |
 | Q-2 | CDK in Java or TypeScript? | Java preferred for consistency |
 
@@ -490,7 +488,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **MCP gateway** | Single control point in front of MCP servers: auth, tool filtering, budgets, observability |
 | **Virtual key** | Bifrost credential carrying a tool allowlist, budget and rate limit |
 | **Semantic cache** | Cache that returns stored answers for semantically similar questions |
-| **Freshness class** | `REAL_TIME`, `DAILY` or `STATIC`; decides whether and how long an answer can be cached |
+| **Freshness class** | `REAL_TIME` (never cached) or `CACHEABLE` (cached for one fixed TTL); decides whether an answer can be cached |
 | **RAG** | Retrieval-augmented generation — answering from retrieved documents |
 | **XBRL** | Structured financial data in SEC filings (`companyfacts` API) |
 | **HITL** | Human-in-the-loop approval before an action executes |

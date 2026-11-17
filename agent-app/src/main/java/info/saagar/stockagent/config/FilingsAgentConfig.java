@@ -8,6 +8,8 @@ import dev.langchain4j.model.chat.ChatModel;
 import dev.langchain4j.service.tool.ToolExecutionErrorHandler;
 import dev.langchain4j.service.tool.ToolProvider;
 import info.saagar.stockagent.agent.FilingsAgent;
+import info.saagar.stockagent.logging.AgentProvenanceListener;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -25,16 +27,20 @@ public class FilingsAgentConfig {
   ///
   /// @param agentProperties per-agent settings
   /// @param anthropicApiKey API key from the `ANTHROPIC_API_KEY` environment variable
+  /// @param agentProvenanceListener counts the model's tokens per run
   /// @return the chat model
   @Bean
   public ChatModel filingsChatModel(
-      AgentProperties agentProperties, @Value("${ANTHROPIC_API_KEY}") String anthropicApiKey) {
+      AgentProperties agentProperties,
+      @Value("${ANTHROPIC_API_KEY}") String anthropicApiKey,
+      AgentProvenanceListener agentProvenanceListener) {
     AgentProperties.AgentSettings filingsSettings = agentProperties.forAgent(FILINGS_AGENT_NAME);
     return AnthropicChatModel.builder()
         .apiKey(anthropicApiKey)
         .modelName(filingsSettings.model())
         .maxTokens(filingsSettings.maxTokens())
         .timeout(filingsSettings.timeout())
+        .listeners(List.of(agentProvenanceListener.tokenListener(FILINGS_AGENT_NAME)))
         .build();
   }
 

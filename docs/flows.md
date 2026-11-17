@@ -27,17 +27,17 @@ Open: whether the page has a watchlist editor ([OD-4](open-decisions.md)) and wh
 ## Quote
 
 1. In the chat window's prompt box, the user asks for a price, such as "price of Apple".
-2. The classifier labels it `QUOTE` with freshness `REAL_TIME` (FR-4).
-3. The app calls `getQuote` on `market-data-mcp` directly, with no cache and no multi-agent run (FR-5).
+2. The prompt classifier labels it `REAL_TIME` with ticker `AAPL` (FR-4), so the semantic cache is skipped.
+3. The Supervisor delegates to the Market data agent, which calls `getQuote` on `market-data-mcp`. A direct `getQuote` call with no multi-agent run (FR-5) is deferred.
 4. The answer returns with its source.
 
 ## Research question
 
-See the request-flow diagram in spec §5.2. In short: classify, check the semantic cache for static and daily questions, run the supervisor and specialist agents, have the Critic verify numbers against tool outputs, apply output guardrails, and return the answer with citations and an agent trace.
+See the request-flow diagram in spec §5.2. In short: classify, check the semantic cache for `CACHEABLE` questions, run the supervisor and specialist agents, apply output guardrails, and return the answer with citations and an agent trace.
 
 ## Paper trade with approval
 
-1. The user asks for a trade in chat. The classifier labels it `TRADE`.
+1. The user asks for a trade in chat. The Supervisor routes it to the agent that owns `proposePaperTrade`.
 2. The agent calls `proposePaperTrade(...)`, which creates a `PendingAction` with status `PENDING` and returns its ID (FR-21). Nothing executes yet.
 3. The page lists the pending action with Approve and Reject buttons (FR-22).
 4. The user approves with `POST /api/actions/{id}/approve`. Deterministic code, not the LLM, updates the holdings.
