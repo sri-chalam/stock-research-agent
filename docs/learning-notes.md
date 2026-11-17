@@ -151,6 +151,44 @@ POST /api/chat  X-User-Id: alice        (validated; invalid → 400)
 - News agent dropped: it taught no new agentic concept; the news tools stay with the Market data agent.
 - Critic dropped: without raw tool outputs it could only check the Supervisor's copy of the numbers, a weak check.
 
+## Semantic cache
+
+Flow: classify → `REAL_TIME` skips the cache → embed (bge-small, in-process) → lookup (same ticker set, not expired, nearest row) → similarity ≥ 0.87 is a hit: stored answer, no agents → else run the Supervisor → store.
+
+- HNSW: approximate nearest-neighbour search over a graph instead of scanning every row. Trades exact recall for speed.
+- pgvector filters (`WHERE`) after the index scan, so a narrow filter on a big table can find nothing.
+- `<=>` is cosine distance; similarity = `1 - distance`.
+- Ticker filter: "AAPL margins" and "MSFT margins" embed above the threshold.
+- Portfolio answers are never stored, instead of keying by user: no cross-user leak, one shared cache.
+- A hit still costs the classifier call (~600 tokens) and one embedding (free, in-process).
+- Skipped: per-class TTLs, invalidation on a new filing, intent routing.
+
+Threshold calibration (bge-small, chosen 0.87):
+
+| Pairs | Similarity |
+|---|---|
+| Should hit (paraphrases) | 0.890–0.934 |
+| Should miss (same ticker, different question) | 0.655–0.848 |
+| False hit (one word swapped: 10-K → 10-Q, revenue → net income) | 0.882–0.964 |
+| False miss (`AAPL` vs "Apple", heavier rewording) | 0.643–0.854 |
+
+- No threshold separates them all: embeddings barely notice a one-word swap.
+
+## Model choice
+
+- Each agent's model is fixed in config, never picked at runtime. All on Haiku.
+- Supervisor moves to Sonnet only if Haiku misroutes or merges badly, worth the extra cost.
+
+Supervisor Haiku vs Sonnet (3 Iteration 3 prompts, cache off, one run each):
+
+| | Haiku | Sonnet |
+|---|---|---|
+| Routing and answers | Correct | Same |
+| Run cost | $0.0009–0.0020 | $0.0072–0.0150 (8–9×) |
+| Duration | 5.4–8.9 s | 6.1–9.1 s |
+
+Decision: Supervisor stays on Haiku: same routing and answers at 1/8 the cost.
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.

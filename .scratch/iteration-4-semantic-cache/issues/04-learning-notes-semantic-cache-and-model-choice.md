@@ -20,7 +20,7 @@
 
 ## Acceptance criteria
 
-- [ ] Semantic cache section covers, briefly:
+- [x] Semantic cache section covers, briefly:
   - The request flow: classify → skip for `REAL_TIME` → embed → lookup (ticker filter, TTL, threshold) → hit returns stored answer, miss runs the Supervisor → store rules.
   - What the HNSW index does: approximate nearest-neighbour search instead of scanning every row, trading exact recall for speed.
   - Cosine distance (`<=>`) vs cosine similarity (`1 - distance`).
@@ -29,8 +29,8 @@
   - The threshold calibration scores (should-hit and should-miss pairs) and the chosen threshold.
   - What a hit still costs: the classifier call and one embedding.
   - Production upgrades deliberately skipped: per-class TTLs, invalidation on a new filing, intent routing.
-- [ ] Model choice section covers:
+- [x] Model choice section covers:
   - The app never picks a model at runtime: each agent's model is fixed in config, and every agent runs on Haiku.
   - Under what condition the Supervisor would move to Sonnet: only if the comparison shows Haiku routing to the wrong specialist or merging answers badly, weighed against Sonnet's extra cost and latency.
   - The comparison table and the resulting decision line ("Supervisor stays on Haiku because …").
-- [ ] No other section of the learning notes is reorganized.
+- [x] No other section of the learning notes is reorganized.
