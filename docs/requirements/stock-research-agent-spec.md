@@ -43,7 +43,7 @@ A signed-in user keeps a watchlist and a paper (simulated) portfolio, and can:
 - **Ask research questions** — e.g., "What did NVDA's last 10-K say about supply-chain risk, and how has gross margin trended?"
 - **Get quick facts** — e.g., "What is the stock price of Apple?"
 - **Receive a scheduled morning brief** — news, price moves, upcoming earnings and new filings for their holdings.
-- **Analyze portfolio risk** — e.g., "How exposed am I to semiconductors? What happens if rates rise 1%?"
+- **Check their portfolio** — e.g., "What do I hold, and how are my holdings doing today?"
 - **Place paper trades** — always behind explicit human approval.
 
 Every answer that contains facts or numbers cites its source (tool output or filing section).
@@ -70,7 +70,7 @@ Every answer that contains facts or numbers cites its source (tool output or fil
 | US-1 | investor | ask for a current quote ("price of Apple") | I get a fast, live answer |
 | US-2 | investor | ask questions about a company's filings | I understand risks and trends with citations |
 | US-3 | investor | see recent news and sentiment for a ticker | I know what is moving the stock |
-| US-4 | investor | analyze my portfolio's sector exposure and what-if scenarios | I understand my risk |
+| US-4 | investor | ask about my holdings and watchlist, and how my holdings are doing today | I can follow my portfolio |
 | US-5 | investor | receive a morning brief for my holdings | I stay informed without asking |
 | US-6 | investor | place a paper trade that I must approve | nothing executes without my confirmation |
 | US-7 | investor | have the assistant remember my holdings and preferences | I don't repeat context |
@@ -116,10 +116,9 @@ flowchart TB
       SC[Semantic cache]
       SUP[Supervisor agent]
       SPEC[Specialist agents]
-      CRIT[Critic agent]
       HITL[Pending actions / approvals]
       API --> CLS --> SC
-      SC -- miss --> SUP --> SPEC --> CRIT
+      SC -- miss --> SUP --> SPEC
       SUP --> HITL
     end
 
@@ -151,29 +150,24 @@ flowchart TD
     K -- miss --> S[Supervisor]
     S --> A1[Filings analyst]
     S --> A2[Market data agent]
-    S --> A3[News & sentiment agent]
-    S --> A4[Portfolio risk agent]
-    A1 & A2 & A3 & A4 --> S
-    S --> V[Critic: verify numbers<br/>against tool outputs]
-    V -- fail --> S
-    V -- pass --> O[Output guardrails] --> W[Store in cache if cacheable] --> Ans[Answer + citations + agent trace]
+    S --> A3[Portfolio agent]
+    A1 & A2 & A3 --> S
+    S --> O[Output guardrails] --> W[Store in cache if cacheable] --> Ans[Answer + citations + agent trace]
     C -- "trade request" --> P[Create PendingAction<br/>await user approval]
 ```
 
 ## 6. Agents
 
-### 6.1 Agent inventory — six LLM agents
+### 6.1 Agent inventory — four LLM agents
 
 | # | Agent | Responsibility | Tools / data | Default model | Build order |
 |---|---|---|---|---|---|
 | 1 | **Supervisor** | Understand request, plan, delegate to specialists, merge results | Specialist agents | Haiku 5.5 (Sonnet if evals require) | Iteration 3 |
 | 2 | **Filings analyst** | Answer from 10-K/10-Q/8-K via RAG, with section citations | filings-mcp, pgvector | Haiku 5.5 (Sonnet candidate) | Iteration 3 |
-| 3 | **Market data agent** | Quotes, fundamentals, earnings dates | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
-| 4 | **News & sentiment agent** | Summarize company/market news; treats articles as **untrusted input** | market-data-mcp (news) | Haiku 5.5 | Iteration 3b |
-| 5 | **Portfolio risk agent** | Sector exposure, concentration, what-if scenarios | portfolio-mcp | Haiku 5.5 (Sonnet candidate) | Iteration 3c |
-| 6 | **Critic** | Verify every number and claim in the draft answer against tool outputs before returning | Tool outputs of the run | Haiku 5.5 | Iteration 3d |
+| 3 | **Market data agent** | Quotes, fundamentals, earnings dates, company and market news; treats article text as **untrusted input** | market-data-mcp | Haiku 5.5 | Iteration 1a (standalone, all six market-data-mcp tools); joins the Supervisor in Iteration 3 |
+| 4 | **Portfolio agent** | Read the user's holdings and watchlist | portfolio-mcp (`getHoldings`, `getWatchlist`) | Haiku 5.5 | Iteration 3b |
 
-**Build sequence:** start with 3 agents (Supervisor, Filings, Market data), then add News, Risk and Critic one at a time, measuring cost and latency after each addition.
+**Build sequence:** start with 3 agents (Supervisor, Filings, Market data), then add the Portfolio agent in Iteration 3b, measuring cost and latency after the addition.
 
 ### 6.2 Components that are deliberately *not* agents
 
@@ -191,7 +185,6 @@ flowchart TD
 - AG-2: Each agent's model is configurable in `application.yml`; model IDs are never hard-coded.
 - AG-3: Bounded autonomy per run: max steps (default 8), max tokens, wall-clock timeout, max cost.
 - AG-4: Loop detection: abort if the same tool is called with the same arguments more than twice.
-- AG-5: The Critic rejects answers containing numbers not present in tool outputs; the Supervisor gets one revision attempt, then returns a partial answer with a warning.
 - AG-6: Agent orchestration uses the LangChain4j agentic module (supervisor topology). **LangGraph4j is not required**; it is an optional comparison in Iteration 10.
 
 ## 7. MCP Servers and Data Sources
@@ -202,7 +195,7 @@ flowchart TD
 |---|---|---|---|
 | **market-data-mcp** | `getQuote(symbol)`, `getCompanyProfile(symbol)`, `getCompanyNews(symbol, from, to)`, `getMarketNews(category)`, `getEarningsCalendar(from, to, symbol?)`, `getBasicFinancials(symbol)` | Finnhub (quotes, news, profile, earnings) | API keys held **only** in this server's environment |
 | **filings-mcp** | Iteration 1b: `listFilings(ticker, formType)` (`formType` required: `10-K`, `10-Q` or `8-K`), `getCompanyFacts(ticker)` (XBRL, fixed metrics). Iteration 2: `getFilingSection(ticker, accession, section)`, `searchFilings(ticker, query)` (RAG) | SEC EDGAR | None (User-Agent with contact email required) |
-| **portfolio-mcp** | `getHoldings()`, `getWatchlist()`, `getExposureBySector()`, `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | User-scoped OAuth token; ownership enforced in code |
+| **portfolio-mcp** | Iteration 3b: `getHoldings()` (ticker and shares), `getWatchlist()` (tickers). Iteration 7: `proposePaperTrade(...)` (creates pending action only) | App PostgreSQL | None upstream. The user is identified by the `X-User-Id` request header before Iteration 5, then by the user token's `sub`; ownership enforced in code |
 
 Requirements:
 - MCP-1: Upstream API keys never leave the MCP server; they are never passed to the agent or the LLM.
@@ -396,7 +389,7 @@ Introduced in **Iteration 6**, after the application works without it, so the RE
 - NFR-12: Structured JSON logs with trace IDs; PII and secrets redacted.
 - NFR-12a: Locally, every container's logs are searchable in a browser through Grafana and Loki. Only `service` (the compose service name, equal to each app's `spring.application.name`) and `level` (as emitted, e.g. `INFO`) are Loki labels; `correlationId`, `traceId` and `eventName` stay JSON fields (ADR 0011).
 - NFR-12b: In AWS, ECS tasks log to CloudWatch through the `awslogs` driver, one log group per service (`/stock-agent/<service>`), with 1-day retention and `RemovalPolicy.DESTROY`; logs are searched with CloudWatch Logs Insights (ADR 0011).
-- NFR-13: Metrics and alerts: error rate, p95 latency, retries, circuit-breaker state, guardrail blocks, loop-limit hits, Critic rejections.
+- NFR-13: Metrics and alerts: error rate, p95 latency, retries, circuit-breaker state, guardrail blocks, loop-limit hits.
 - NFR-13a: Each run ends with one structured log line (`eventName` `answerProvenance`) listing the agents and tools that produced the answer, with the trace ID, so one query answers US-8.
 
 ### 12.4 Quality and evals
@@ -455,7 +448,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | **2a** | Log search | Local: Loki (no volume), Grafana Alloy and Grafana start with plain `docker compose up`; Alloy reads every container's stdout through the Docker socket and sets labels `service` (compose service name) and `level` (JSON apps only); Grafana with anonymous Admin on `127.0.0.1:3000` and a file-provisioned Loki data source; agent-app's `spring.application.name` renamed to `agent-app`. AWS: CloudWatch Logs through `awslogs` (built in 2b). See ADR 0011 | In Grafana Explore, `{service="filings-mcp"} \| json \| level="INFO" \|= "text"` returns matching lines; filtering on `correlationId` shows one request across all three apps; `{service="postgres"}` shows Postgres lines |
 | **2b** | Early AWS deploy (manual) | Images to ECR; minimal CDK ephemeral stack with two Fargate Spot tasks (agent app, MCP servers); ALB restricted to the developer's IP; no real licensed data exposed publicly; `scripts/aws-teardown.sh` that destroys the stack and checks for leftovers; low-threshold AWS Budget alert (see ADR 0005) | App and MCP servers run on ECS and answer a quote and a filings question end to end; a CloudWatch Logs Insights query filters one service's logs by level and text; after the teardown script, no ALB, NAT gateway, Elastic IP or running task remains |
 | **3** | Multi-agent | Supervisor + Filings + Market data (3 agents) using langchain4j-agentic | Manual check with three curl prompts (filings only, market data only, both): `answerProvenance` shows the Supervisor called the expected specialist agent(s), with tokens per agent (`tokensByAgent`) and run latency (`completeExecDurationTimeMs`) |
-| **3b–3d** | Add agents | News & sentiment → Portfolio risk → Critic | Each addition has eval cases; Critic catches seeded wrong numbers |
+| **3b** | `portfolio-mcp` + Portfolio agent | `portfolio-mcp` (port 8084) with `getHoldings` and `getWatchlist` read from Postgres, seeded with two users (`alice`, `bob`) and scoped by the `X-User-Id` header (replaced by the token's `sub` in Iteration 5); Portfolio agent (prompt `portfolio-agent-v1`, allowlist `getHoldings` and `getWatchlist`) joins the Supervisor (`supervisor-v2`); optional `X-User-Id` on `POST /api/chat`, forwarded only on MCP calls to `portfolio-mcp`, never in prompt text | `tools/list` returns exactly `getHoldings` and `getWatchlist`; each user sees only their own holdings and watchlist, both through `tools/call` and through "What stocks do I hold?" / "What's on my watchlist?" on `POST /api/chat`; without `X-User-Id` the tools return "No user identified; send X-User-Id" and the agent relays it, and an invalid header value returns 400; for "How are my holdings doing today?" `answerProvenance` shows the Portfolio agent first, then the Market data agent with `getQuote` per held ticker; only the Portfolio agent sees the portfolio tools; one request's `correlationId` appears in agent-app and `portfolio-mcp` logs, and the user ID does not reach `market-data-mcp` or `filings-mcp`; restarts do not duplicate seed rows; `docker compose up` runs all four apps |
 | **4** | Semantic cache + model routing | Intent/freshness classifier; freshness-aware cache; per-agent model config; token/cost dashboard | Real-time questions never cached; cache hit rate and tokens saved visible; Haiku vs Sonnet decision documented with eval numbers |
 | **5** | Security + GUI | WorkOS AuthKit login; resource servers everywhere; portfolio-mcp with ownership checks; guardrails; `index.html` chat page with trace panel | Unauthenticated/wrong-audience/cross-user requests rejected (tests); advice requests refused; injection tests pass; demo via browser |
 | **6** | Bifrost gateway | MCP + LLM traffic through Bifrost; virtual key per agent with tool allowlists and budgets; Code Mode measurement; single retry layer | Each agent sees only its tools; budgets enforced; before/after token numbers in README |
@@ -477,7 +470,7 @@ Each iteration ends with working, tested, committed code and a short README upda
 | R-4 | Free-tier data limits (Finnhub has no candles, so no price history) | Accept the limits; add a single history provider later if needed |
 | R-5 | Data licensing (Finnhub personal use only) | Keep repo free of recorded licensed data; no public hosted demo; share via video |
 | R-6 | Bifrost open-source feature limits and vendor-published benchmarks | Measure own numbers; keep auth in Spring Security. OSS Bifrost cannot validate WorkOS JWTs (Enterprise only), so MCP servers validate the user token (ADR 0001) |
-| R-7 | Haiku 5.5 sufficiency for Supervisor/Filings/Risk | Decide per agent using evals |
+| R-7 | Haiku 5.5 sufficiency for Supervisor/Filings | Decide per agent using evals |
 | R-8 | Haiku 5.5 price jump above 100K-token prompts (cache reads count) | Enforce prompt-size budget; alert near threshold |
 | R-9 | Fargate Spot interruptions | Acceptable for a demo; tasks restart automatically |
 | R-10 | Semantic cache false hits returning wrong-ticker answers | Ticker and freshness filters; high threshold; feedback metric |

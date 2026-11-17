@@ -16,9 +16,9 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 
 | # | Area | What to explore | Status |
 |---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents, Critic) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent and Filings analyst |
 | 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`). `portfolio-mcp` comes with Human-in-the-loop |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`). `portfolio-mcp` (`getHoldings`, `getWatchlist`) comes in Iteration 3b |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
 | 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
@@ -76,7 +76,7 @@ All apps bind to `127.0.0.1` only. There is no auth before Iteration 5.
 | `agent-app` | 8080 | `/api/chat` | Built |
 | `market-data-mcp` | 8081 | `/mcp` | Built |
 | `filings-mcp` | 8082 | `/mcp` | Built (Iteration 1b) |
-| `portfolio-mcp` | 8084 | `/mcp` | Reserved (Iteration 5) |
+| `portfolio-mcp` | 8084 | `/mcp` | Planned (Iteration 3b) |
 | Grafana (Compose only) | 3000 | `/explore` | Built (Iteration 2a) |
 
 ## Run locally

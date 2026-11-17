@@ -95,7 +95,7 @@ The response strategy decides what the run returns once the planner says `done`:
 | `SUMMARY` (ours) | The `response` argument of the planner's `done` choice: the planner's recap of every specialist's answer, from its chat memory | None. The recap rides on the `done` planner call, which runs under every strategy |
 | `SCORED` | Builds both, then a `ResponseAgent` call scores each against the user's prompt (0.0 to 1.0) and returns the higher one | One scoring call |
 
-- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v1` tells it to keep them exactly; nothing checks yet (the Critic, Iteration 3d).
+- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v1` tells it to keep them exactly; nothing checks it (the Critic was dropped).
 
 ### Runtime flow of a combined question
 

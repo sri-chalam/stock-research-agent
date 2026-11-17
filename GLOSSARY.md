@@ -7,12 +7,12 @@
 - `DAILY`: news summaries and briefs. Cached until the end of the trading day.
 - `STATIC`: filing content and company descriptions. Cached for days or weeks, and cleared when the ticker has a new filing.
 
-**Holdings**: The stocks a user holds in their paper portfolio, as a ticker and the number of shares held (e.g., 50 shares of AAPL). Stored in Postgres and read through `getHoldings()` on `portfolio-mcp`. Holdings drive sector exposure and the Portfolio risk agent. Not the same as the watchlist, which follows tickers without owning them.
+**Holdings**: The stocks a user holds in their paper portfolio, as a ticker and the number of shares held (e.g., 50 shares of AAPL). Stored in Postgres and read through `getHoldings()` on `portfolio-mcp`. The Portfolio agent reads them. Not the same as the watchlist, which follows tickers without owning them.
 
 **MCP server**: A Java service that exposes tools to agents over MCP; agents never call data providers directly. There are three, one per domain:
 - `market-data-mcp`: quotes, news, profiles, earnings, financials (Finnhub).
 - `filings-mcp`: SEC filings, XBRL facts, filings search (SEC EDGAR).
-- `portfolio-mcp`: holdings, watchlist, sector exposure, paper-trade proposals (application Postgres).
+- `portfolio-mcp`: holdings, watchlist, paper-trade proposals (application Postgres).
 
 **Paper portfolio**: A user's simulated portfolio: their holdings, changed only by approved paper trades. Each user has their own, stored in Postgres. `portfolio-mcp` enforces ownership in code, so a user can read and modify only their own, and portfolio answers are never shared across users.
 _Avoid_: "account", "brokerage account"
@@ -21,6 +21,9 @@ _Avoid_: "account", "brokerage account"
 _Avoid_: "real trading", "order execution"
 
 **PendingAction**: A stored proposal, such as a paper trade or an alert-rule change, that waits for user approval. It has a status (starting at `PENDING`), expires after a configurable time (default 15 minutes), and is executed by deterministic code, never by the LLM. Its final status (`APPROVED`, `REJECTED` or `EXPIRED`) is the only record of the outcome; there is no separate audit log.
+
+**Portfolio agent**: The specialist agent that reads the user's holdings and watchlist through `getHoldings()` and `getWatchlist()` on `portfolio-mcp`, and sees no other tools. It never takes the user from prompt text: the app passes the user's identity to `portfolio-mcp` in code. For a question such as "how are my holdings doing", the Supervisor calls it first, then passes its tickers to the Market data agent for quotes.
+_Avoid_: "Portfolio risk agent"
 
 **Quote**: The latest price of one US stock, with its percent change and the time the price was current (e.g., AAPL at 189.42, down 0.37%). It is real-time data, so an answer containing a quote is never served from the semantic cache. Quotes come from Finnhub through `market-data-mcp`.
 

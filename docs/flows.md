@@ -33,7 +33,7 @@ Open: whether the page has a watchlist editor ([OD-4](open-decisions.md)) and wh
 
 ## Research question
 
-See the request-flow diagram in spec §5.2. In short: classify, check the semantic cache for static and daily questions, run the supervisor and specialist agents, have the Critic verify numbers against tool outputs, apply output guardrails, and return the answer with citations and an agent trace.
+See the request-flow diagram in spec §5.2. In short: classify, check the semantic cache for static and daily questions, run the supervisor and specialist agents, apply output guardrails, and return the answer with citations and an agent trace.
 
 ## Paper trade with approval
 
