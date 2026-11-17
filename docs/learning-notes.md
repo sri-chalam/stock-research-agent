@@ -130,6 +130,27 @@ One run per prompt on Compose, all agents on `claude-haiku-5-5`, from ticket 02 
 - Planner calls run in series with the specialists, so each one adds a full LLM round trip to the run. `answerProvenance` logs only the run's total duration, not time per agent.
 - The quote bypass (FR-5, Iteration 4) removes the Supervisor's calls from "Price of Apple"-type prompts.
 
+## Portfolio agent and user-scoped tools
+
+```
+POST /api/chat  X-User-Id: alice        (validated; invalid → 400)
+  → ChatController puts it in the MDC (userId)
+  → McpUserHeaders, on the portfolio-mcp client only → X-User-Id on tools/call
+  → portfolio-mcp McpController binds PortfolioUser.USER_ID (ScopedValue) → WHERE user_id = :userId
+```
+
+- The user ID never enters prompt text, so the model can't name or change it. `getHoldings` and `getWatchlist` take no arguments. Only the `portfolio-mcp` client sends the header, so `market-data-mcp` and `filings-mcp` never see it. In Iteration 5 the token's `sub` replaces the header, and `portfolio-mcp` reads it from the validated JWT instead of trusting a header.
+- "How are my holdings doing today?" chains two specialists: the planner calls the Portfolio agent, reads its tickers from `lastResponse`, then calls the Market data agent naming them. Two runs as `alice`, Haiku 5.5:
+
+| Run | Plan | Tokens (in / out) | Duration | Answer |
+|---|---|---|---|---|
+| 1 | Portfolio, then Market data once with 3 `getQuote` calls | 10,100 / 1,015 | 9,159 ms | All three holdings |
+| 2 | Portfolio, then Market data **three times**, one ticker each | 18,880 / 861 | 11,858 ms | NVDA only |
+
+- Run 2 hit `max-steps: 4` (1 + 3 specialist calls), so it stopped without `done` and returned the last specialist's answer. `supervisor-v2` says "naming every ticker", but the planner can still fan out per ticker; nothing enforces one call.
+- News agent dropped: it taught no new agentic concept; the news tools stay with the Market data agent.
+- Critic dropped: without raw tool outputs it could only check the Supervisor's copy of the numbers, a weak check.
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.
