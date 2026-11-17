@@ -68,6 +68,68 @@ ChatController → agent.chat(prompt)                        (AiServices proxy)
   - `agenticScope()`: the run's shared context. It holds the run's `memoryId` and the values agents read and write (for example, the `request` the planner hands a specialist).
 - In `ChatController`, the code after `invokeWithAgenticScope` calls no agents. It only reads what the listener recorded and builds the `toolsCalled` list for the response.
 
+## Supervisor
+
+Built in [SupervisorAgentConfig](../agent-app/src/main/java/info/saagar/stockagent/config/SupervisorAgentConfig.java) with `AgenticServices.supervisorBuilder()` (`langchain4j-agentic` `1.23.0-beta33`). Source of the behaviour below: `SupervisorPlanner`, `PlannerAgent` and `ResponseAgent` in that module.
+
+### The planner loop
+
+- The Supervisor is a loop around one LLM call, the planner (`PlannerAgent.plan`). Each planner call returns one JSON choice: a specialist agent's name and its arguments, or `done`.
+- After a specialist answers, the planner is called again with that answer as `lastResponse`, and picks another specialist or `done`. One prompt can reach several specialist agents, one at a time.
+- The planner keeps a chat memory for the run (`CHAT_MEMORY`, a 20-message window, the default). Later planner calls see the earlier specialists' answers too, not just the last one.
+- `max-steps: 4` (`maxAgentsInvocations`; library default 10) caps the specialist calls per run. When the cap is hit, the run stops without a `done` call and returns the last specialist's answer, whatever the response strategy.
+- The planner's system prompt is the library's own. Our [supervisor-v1](../agent-app/src/main/resources/prompts/supervisor-v1.txt) prompt is only appended to it as the "supervisor context". The planner sees each specialist as a card built from its `@Agent` name, description and arguments, so the description decides the routing.
+
+### What a specialist agent receives
+
+- A specialist gets the planner's sub-question, not the user's prompt. The planner writes `request` as an argument, and the library stores it in the agentic scope, where the specialist's `@V("request")` reads it.
+- Risk: the planner rewrites the question and can drop details, for example a fiscal year, a form type or "last 3 years". The specialist can't recover them; it never sees the original prompt. No log line records the sub-question; only the tool arguments in `toolExecuted` hint at it.
+
+### How the answers are merged
+
+The response strategy decides what the run returns once the planner says `done`:
+
+| Strategy | Returns | Extra LLM calls |
+|---|---|---|
+| `LAST` (library default) | The last specialist's answer only. In a combined question, the first specialist's answer is lost | None |
+| `SUMMARY` (ours) | The `response` argument of the planner's `done` choice: the planner's recap of every specialist's answer, from its chat memory | None. The recap rides on the `done` planner call, which runs under every strategy |
+| `SCORED` | Builds both, then a `ResponseAgent` call scores each against the user's prompt (0.0 to 1.0) and returns the higher one | One scoring call |
+
+- With `SUMMARY`, the final answer is written by the planner, not by a specialist. A number or citation can change in that rewrite. `supervisor-v1` tells it to keep them exactly; nothing checks yet (the Critic, Iteration 3d).
+
+### Runtime flow of a combined question
+
+"Apple's revenue for the last 3 fiscal years and its current price":
+
+```
+ChatController → supervisorAgent.invokeWithAgenticScope(prompt)   (fresh scope, random memoryId)
+  → planner call 1: agents list + prompt            → {filings, request: "Apple's revenue, last 3 fiscal years"}
+  → FilingsAgent.answer(request)                   (own LLM loop)
+      → getCompanyFacts(AAPL) via filings-mcp → answer with citations
+  → planner call 2: lastResponse = filings answer  → {market-data, request: "Current price of Apple (AAPL)"}
+  → MarketDataAgent.answer(request)                (own LLM loop)
+      → getQuote(AAPL) via market-data-mcp → answer
+  → planner call 3: lastResponse = price answer    → {done, response: merged recap}
+  → SUMMARY returns the recap → ChatController reads AgentProvenanceListener → answerProvenance
+```
+
+- A single-specialist question makes two planner calls (pick, then `done`); this one makes three.
+
+### Cost of the Supervisor's extra calls
+
+One run per prompt on Compose, all agents on `claude-haiku-5-5`, from ticket 02 (`answerProvenance`). Tokens are input / output. Single runs, so rough numbers.
+
+| Prompt | `supervisor` | Specialist agents | Total | Duration |
+|---|---|---|---|---|
+| "List Microsoft's recent 10-K filings" | 2,501 / 600 | 4,084 / 593 | 6,585 / 1,193 | 6,061 ms |
+| "Price of Apple" | 2,070 / 337 | 3,661 / 160 | 5,731 / 497 | 5,783 ms |
+| Revenue + current price (combined) | 3,886 / 528 | 8,737 / 515 | 12,623 / 1,043 | 9,657 ms |
+
+- The Supervisor is 31–38% of each run's input tokens. Most of it is fixed: the library's planner prompt, our supervisor context and the agent cards are sent on every planner call.
+- With `SUMMARY`, the Supervisor writes the final answer, so its output tokens match or beat the specialists'.
+- Planner calls run in series with the specialists, so each one adds a full LLM round trip to the run. `answerProvenance` logs only the run's total duration, not time per agent.
+- The quote bypass (FR-5, Iteration 4) removes the Supervisor's calls from "Price of Apple"-type prompts.
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.
