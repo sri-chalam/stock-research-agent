@@ -128,7 +128,7 @@ One run per prompt on Compose, all agents on `claude-haiku-5-5`, from ticket 02 
 - The Supervisor is 31–38% of each run's input tokens. Most of it is fixed: the library's planner prompt, our supervisor context and the agent cards are sent on every planner call.
 - With `SUMMARY`, the Supervisor writes the final answer, so its output tokens match or beat the specialists'.
 - Planner calls run in series with the specialists, so each one adds a full LLM round trip to the run. `answerProvenance` logs only the run's total duration, not time per agent.
-- The quote bypass (FR-5, Iteration 4) removes the Supervisor's calls from "Price of Apple"-type prompts.
+- A quote bypass (FR-5) would remove the Supervisor's calls from "Price of Apple"-type prompts. It is deferred: in Iteration 4 these prompts are classified `REAL_TIME`, skip the semantic cache and still run the Supervisor.
 
 ## Portfolio agent and user-scoped tools
 

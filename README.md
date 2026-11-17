@@ -21,7 +21,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`). `portfolio-mcp` (`getHoldings`, `getWatchlist`) comes in Iteration 3b |
 | 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
 | 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
-| 6 | Semantic caching | Cache answers by meaning, keyed on ticker, user and how fresh the data must be (real-time, daily, static) | ⏳ |
+| 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ⏳ |
 | 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
 | 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
 | 9 | Guardrails | Prompt-injection checks, news and filing text treated as untrusted input, refusal of buy/sell advice | ⏳ |
@@ -33,7 +33,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 15 | Chat GUI | One `index.html` with streamed answers (SSE) and an agent/tool trace panel | ⏳ |
 | 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
 | 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs only |
-| 18 | Intent and freshness classifier | Route each question to a direct quote lookup, the cache or the multi-agent flow | ❓ |
+| 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ⏳ |
 | 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
 
 Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own.
