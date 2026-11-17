@@ -2,10 +2,9 @@
 
 **Finnhub**: Third-party market data API. It supplies real-time US stock quotes, company news, company profiles and the earnings calendar to `market-data-mcp`. The free tier is US equities only (about 60 requests/min) and for personal use, with no redistribution. Its API key stays inside the MCP server and never reaches the agent or the LLM.
 
-**Freshness class**: How long an answer stays valid, which decides whether the semantic cache may store it. The intent classifier, a single Haiku call with structured output, assigns one of three values to each prompt:
+**Freshness class**: Whether an answer can be reused for a while, which decides whether the semantic cache may store it. The prompt classifier assigns one of two values to each prompt:
 - `REAL_TIME`: prices and intraday moves. Never cached.
-- `DAILY`: news summaries and briefs. Cached until the end of the trading day.
-- `STATIC`: filing content and company descriptions. Cached for days or weeks, and cleared when the ticker has a new filing.
+- `CACHEABLE`: anything else, such as news summaries, filing content and company descriptions. Cached for a fixed time.
 
 **Holdings**: The stocks a user holds in their paper portfolio, as a ticker and the number of shares held (e.g., 50 shares of AAPL). Stored in Postgres and read through `getHoldings()` on `portfolio-mcp`. The Portfolio agent reads them. Not the same as the watchlist, which follows tickers without owning them.
 
@@ -32,7 +31,7 @@ _Avoid_: "Portfolio risk agent"
 - **10-Q**: quarterly report.
 - **8-K**: current report of a significant event, such as an earnings release, acquisition or executive change.
 
-**Semantic cache**: A store of past answers to research questions, kept in Postgres + pgvector. It returns a stored answer when a new question is similar enough (cosine similarity, default threshold 0.92), so no agent or LLM runs. Matches are filtered by ticker, freshness class and, for portfolio questions, user, so one user never sees another user's answer. Cached answers are marked "cached". `REAL_TIME` answers and trade requests are never cached.
+**Semantic cache**: A store of past answers to research questions. It returns a stored answer when a new question is similar enough and names exactly the same tickers, so no agent runs. Cached answers are marked "cached" and expire after a fixed time. `REAL_TIME` prompts skip it entirely, and answers from questions about a user's own portfolio are never stored, so one user never sees another user's answer.
 
 **Specialist agent**: An agent that owns one domain and answers only with that domain's MCP tools, such as the Filings analyst or the Market data agent. It receives a sub-question from the Supervisor, not the user's original prompt.
 _Avoid_: "sub-agent", "worker"
