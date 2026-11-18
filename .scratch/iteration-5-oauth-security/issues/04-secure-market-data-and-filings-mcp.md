@@ -9,8 +9,8 @@
 ## Acceptance criteria
 
 - [ ] `market-data-mcp` is a resource server requiring `marketdata.read`; `filings-mcp` requires `filings.read`. Standard properties only.
-- [ ] JUnit (test JWTs) on each: missing, expired or wrong-audience token → 401; missing scope → 403.
+- [ ] JUnit (test JWTs) on each: missing, expired or wrong-issuer token → 401; missing scope → 403.
 - [ ] "How are my holdings doing today?" runs end to end: `answerProvenance` shows the Portfolio agent, then the Market data agent with `getQuote` per held ticker.
 - [ ] No log line in any app contains the token.
-- [ ] `docker compose up` runs all four apps with the WorkOS env vars (issuer, audiences, demo-user `sub` values).
+- [ ] `docker compose up` runs all four apps with the WorkOS env vars (issuer, demo-user `sub` values).
 - [ ] `./gradlew build` passes.

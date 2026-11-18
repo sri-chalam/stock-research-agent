@@ -6,7 +6,7 @@ Design details that refine the [requirements spec](requirements/stock-research-a
 
 ### OAuth scopes
 
-Scope names are defined in spec requirement SEC-8. Every token is validated for signature, issuer, expiry, audience and scope (SEC-3).
+Scope names are defined in spec requirement SEC-8. Every token is validated for signature, issuer, expiry and scope (SEC-3). WorkOS tokens have no `aud` claim, so each app's required scope is its boundary.
 
 | Scope | Granted access | Enforced by |
 |---|---|---|

@@ -8,14 +8,14 @@
 
 ## Notes
 
-- agent-app and `portfolio-mcp` become Spring Security OAuth2 resource servers configured only through standard properties (`issuer-uri`, audiences, authorities claim) (SEC-2).
+- agent-app and `portfolio-mcp` become Spring Security OAuth2 resource servers configured only through standard properties (`issuer-uri`, authorities claim; no `audiences`: WorkOS tokens have no `aud`, see ticket 02) (SEC-2).
 - The token travels in code, never in prompt text (SEC-4): the per-request MCP header supplier that today adds `X-User-Id` for `portfolio-mcp` is replaced by one that adds `Authorization: Bearer …`, used by all three MCP clients (Option A).
 - Demo portfolios are seeded for `sub` values from env vars; restarts do not duplicate seed rows.
 
 ## Acceptance criteria
 
-- [ ] JUnit (test JWTs), agent-app: missing, expired or wrong-audience token → 401; token without `agent.chat` → 403.
-- [ ] JUnit (test JWTs), `portfolio-mcp`: missing, expired or wrong-audience token → 401; token without `portfolio.read` → 403.
+- [ ] JUnit (test JWTs), agent-app: missing, expired or wrong-issuer token → 401; token without `agent.chat` → 403.
+- [ ] JUnit (test JWTs), `portfolio-mcp`: missing, expired or wrong-issuer token → 401; token without `portfolio.read` → 403.
 - [ ] JUnit, `portfolio-mcp`: the user comes from `sub`; a token for user 1 never returns user 2's holdings or watchlist.
 - [ ] `X-User-Id`, `McpUserHeaders` and the "No user identified" path are removed.
 - [ ] No log line contains the token; no prompt text contains the token or `sub` (SEC-4/5).
