@@ -20,10 +20,10 @@
 
 ## Acceptance criteria
 
-- [ ] Spec §14: row 5 split into 5, 5b and 5c, each with the acceptance criteria of its tickets.
-- [ ] Spec §4, §5.1, §8.11, §11 (UI-2, UI-3) and NFR-1 no longer mention SSE or the stream endpoint; UI-3 lists only the 5b features.
-- [ ] Spec §8.9 lists only the four kept guardrails; FR-35 and the LLM-judge and off-topic items are removed or marked as covered elsewhere.
-- [ ] Spec §7.1 and §9: `portfolio-mcp` identity is the token's `sub`; `X-User-Id` is described as removed in Iteration 5.
-- [ ] `docs/design.md` scopes table marks `portfolio.write` as Iteration 7.
-- [ ] `GLOSSARY.md` and README match (no SSE promise, no `X-User-Id` after Iteration 5).
-- [ ] `./gradlew build` passes.
+- [x] Spec §14: row 5 split into 5, 5b and 5c, each with the acceptance criteria of its tickets.
+- [x] Spec §4, §5.1, §8.11, §11 (UI-2, UI-3) and NFR-1 no longer mention SSE or the stream endpoint; UI-3 lists only the 5b features.
+- [x] Spec §8.9 lists only the four kept guardrails; FR-35 and the LLM-judge and off-topic items are removed or marked as covered elsewhere.
+- [x] Spec §7.1 and §9: `portfolio-mcp` identity is the token's `sub`; `X-User-Id` is described as removed in Iteration 5.
+- [x] `docs/design.md` scopes table marks `portfolio.write` as Iteration 7.
+- [x] `GLOSSARY.md` and README match (no SSE promise, no `X-User-Id` after Iteration 5).
+- [x] `./gradlew build` passes.

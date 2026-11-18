@@ -10,9 +10,9 @@ Scope names are defined in spec requirement SEC-8. Every token is validated for 
 
 | Scope | Granted access | Enforced by |
 |---|---|---|
-| `agent.chat` | Submit prompts and read run streams: `POST /api/chat`, `GET /api/chat/{runId}/stream` | Agent app |
+| `agent.chat` | Submit prompts: `POST /api/chat` | Agent app |
 | `portfolio.read` | Read holdings and watchlist: `getHoldings`, `getWatchlist` | `portfolio-mcp` |
-| `portfolio.write` | Propose paper trades: `proposePaperTrade` (creates a `PENDING` action only) | `portfolio-mcp` |
+| `portfolio.write` | Propose paper trades: `proposePaperTrade` (creates a `PENDING` action only). Iteration 7; not enforced in Iteration 5 | `portfolio-mcp` |
 | `marketdata.read` | All `market-data-mcp` tools | `market-data-mcp` |
 | `filings.read` | All `filings-mcp` tools | `filings-mcp` |
 

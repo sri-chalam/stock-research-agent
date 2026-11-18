@@ -24,13 +24,13 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ✅ |
 | 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ⏳ |
 | 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
-| 9 | Guardrails | Prompt-injection checks, news and filing text treated as untrusted input, refusal of buy/sell advice | ⏳ |
+| 9 | Guardrails | Prompt-injection and advice-request refusal, a message length limit, news and filing text treated as untrusted input, and a "Not investment advice" disclaimer with only known source links | ⏳ |
 | 10 | Human-in-the-loop | Paper trades run only after the user approves them | ⏳ |
 | 11 | Structured output | Reports and briefs returned as typed Java records | ⏳ |
 | 12 | Resilience | Retry per LLM step, circuit breaker and fallback model | ⏳ |
 | 13 | Scheduled jobs | Morning brief run by a scheduled job with a machine-to-machine token and the Anthropic Batch API | ⏳ |
 | 14 | Cost control | Prompt caching, token and cost per agent, Haiku vs Sonnet chosen per agent | ⏳ |
-| 15 | Chat GUI | One `index.html` with streamed answers (SSE) and an agent/tool trace panel | ⏳ |
+| 15 | Chat GUI | One `index.html` with WorkOS sign-in, a prompt box, the answer (not streamed) and an agent/tool trace panel | ⏳ |
 | 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
 | 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs, Loki/Grafana log search |
 | 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
@@ -96,7 +96,7 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
                                                                                                        └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
-The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. The user comes from the optional `X-User-Id` header on `POST /api/chat` (`alice` or `bob` in the seed data). `agent-app` forwards it only on MCP calls to `portfolio-mcp`, never to the other MCP servers and never in prompt text. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
+The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. Until Iteration 5, the user comes from the optional `X-User-Id` header on `POST /api/chat` (`alice` or `bob` in the seed data); Iteration 5 removes the header and takes the user from the signed-in user's token (`sub`). `agent-app` forwards it only on MCP calls to `portfolio-mcp`, never to the other MCP servers and never in prompt text. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
 
 ```
 curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfolio agent) → MCP client + X-User-Id → portfolio-mcp :8084 (/mcp, portfolio tools) → Postgres (portfolio schema)
@@ -376,7 +376,7 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"getMarketNews","arguments":{"category":"crypto"}}}'
 ```
 
-`portfolio-mcp` serves `getHoldings` and `getWatchlist` for two seeded users, `alice` and `bob`. Neither tool takes arguments: the user comes from the `X-User-Id` header (replaced by the token's `sub` in Iteration 5). `schema.sql` and `data.sql` create and seed the tables on every start without duplicating rows.
+`portfolio-mcp` serves `getHoldings` and `getWatchlist` for two seeded users, `alice` and `bob`. Neither tool takes arguments: the user comes from the `X-User-Id` header, which Iteration 5 removes in favour of the token's `sub`. `schema.sql` and `data.sql` create and seed the tables on every start without duplicating rows.
 
 ```bash
 # alice's holdings: [{"ticker":"AAPL","shares":50},...]; send bob for bob's
