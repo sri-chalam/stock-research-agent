@@ -1,0 +1,34 @@
+meta {
+  name: Mkt-Data Get Multiple Tools Data
+  type: http
+  seq: 10
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+}
+
+body:json {
+  {
+    "message":"What are the P/E ratio, net margin and dividend yield for UPS"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}

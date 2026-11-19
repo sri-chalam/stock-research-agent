@@ -1,0 +1,35 @@
+meta {
+  name: Cache - Get Risks of 10-k of Ticker
+  type: http
+  seq: 19
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+  X-User-Id: alice
+}
+
+body:json {
+  {
+    "message": "What risks does Apple list in its latest 10-K?"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}

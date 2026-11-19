@@ -1,0 +1,35 @@
+meta {
+  name: Cache - No-Cache For Real Time Quotes
+  type: http
+  seq: 20
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+  X-User-Id: alice
+}
+
+body:json {
+  {
+    "message": "What is the stock price of Apple?"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}
