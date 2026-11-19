@@ -36,7 +36,7 @@ Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not
 | 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
 | 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
 
-Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own.
+Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own. See [Future plans](#future-plans).
 
 ### How this was built
 
@@ -423,3 +423,10 @@ curl -i -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
 - Tests use a scripted fake `ChatModel` and fake Finnhub and EDGAR clients; no live model, Finnhub or EDGAR call.
 
 See section 14 of the spec for the full build plan.
+
+## Future plans
+
+Ideas for the near future, added as they come up:
+
+- Use a software factory to make bug fixes and add features.
+  - This needs solid end-to-end automated tests and contract tests first.
