@@ -4,7 +4,7 @@
 
 **Blocked by:** Iteration 5b ticket 01
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions
 

@@ -15,7 +15,7 @@ Decisions settled in the grilling session:
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `docker compose build --pull` builds both images. Their final stage is `alpine:latest` with the jlinked runtime and no full JDK.
 - [ ] With `docker compose up`, `POST /api/chat` "price of Apple" returns a live price. This covers TLS to Anthropic and Finnhub and the MCP call from agent-app to market-data-mcp.

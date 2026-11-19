@@ -14,7 +14,7 @@ Decisions settled in the grilling session:
 
 **Blocked by:** 01 (ADR 0012 and the jlink approach)
 
-**Status:** ready-for-agent
+**Status:** done
 
 - [ ] `docker compose build --pull filings-mcp` builds. The final stage is `amazonlinux:2023` with the jlinked runtime and no full JDK.
 - [ ] After `docker compose up`, filings-mcp is healthy and logs `filingIngestionCompleted` with `failedTickerCount` 0.
