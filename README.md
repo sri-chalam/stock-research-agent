@@ -50,6 +50,87 @@ Claude was excellent overall. A few problems kept coming back:
 - **Commit messages miss the main change.** When asked for a one- or two-line Git commit message for the changes made not committed, it sometimes described a side change instead of the main one. For example, a session that added a new feature got a Git commit message saying the docs were updated.
 - **GUI mistakes it couldn't see.** The first chat page had no visible prompt box, and Claude didn't notice. Giving it a way to check the page itself, such as a browser MCP or explicit checks to run, would probably have caught this.
 
+## Architecture
+
+These diagrams show what is built today. The target design, with Bifrost, human-in-the-loop and memory, is in [spec §5](docs/requirements/stock-research-agent-spec.md#5-architecture).
+
+### Architecture diagram
+
+```mermaid
+flowchart TB
+    user([Browser<br/>chat page])
+    workos[WorkOS AuthKit]
+    claude[Anthropic API<br/>Claude Haiku 5.5]
+
+    subgraph app[agent-app :8080]
+        direction TB
+        api[POST /api/chat<br/>JWT check: agent.chat]
+        guard[Prompt classifier<br/>+ input guardrail]
+        cache[Semantic cache<br/>bge-small embeddings]
+        sup[Supervisor agent]
+        agents[Market data · Filings · Portfolio<br/>specialist agents]
+        out[Output guardrail]
+        mcpc[MCP client<br/>tool allowlist per agent]
+        api --> guard --> cache -- miss --> sup --> agents --> mcpc
+        cache -- hit: cached answer --> api
+        sup --> out
+    end
+
+    subgraph servers[MCP servers · Streamable HTTP, stateless]
+        md[market-data-mcp :8081<br/>marketdata.read]
+        fl[filings-mcp :8082<br/>filings.read<br/>bge-small embeddings]
+        pf[portfolio-mcp :8084<br/>portfolio.read]
+    end
+
+    finnhub[Finnhub API]
+    edgar[SEC EDGAR]
+    subgraph pg[Postgres + pgvector]
+        semdb[(sem_cache<br/>answers + embeddings)]
+        fildb[(filings<br/>10-K chunk embeddings)]
+        pfdb[(portfolio<br/>holdings, watchlist)]
+    end
+
+    subgraph obs[Log search]
+        alloy[Grafana Alloy] --> loki[Loki] --> grafana[Grafana :3000]
+    end
+
+    user -- sign in, PKCE --> workos
+    user -- Bearer JWT --> api
+    app -- LLM calls --> claude
+    cache -- similarity lookup, store --> semdb
+    mcpc -- MCP + forwarded user token --> md & fl & pf
+    md -- quotes, news, profile,<br/>earnings, financials --> finnhub
+    fl -- filings, XBRL facts,<br/>10-K ingest at startup --> edgar
+    fl -- searchFilings: vector search --> fildb
+    pf -- by token sub --> pfdb
+    app & servers -. JSON logs with correlationId .-> alloy
+```
+
+The agent app forwards the user's WorkOS token unchanged on every MCP call, and each MCP server checks its own scope. Upstream API keys stay inside the MCP servers.
+
+### Request flow diagram
+
+```mermaid
+flowchart TD
+    q([Question + WorkOS access token]) --> auth[Validate JWT<br/>agent.chat]
+    auth --> cls[Prompt classifier<br/>freshness, tickers, guardrail flags]
+    cls -- injection or advice request --> refuse([Fixed refusal])
+    cls -- CACHEABLE --> hit{Semantic cache hit?<br/>same tickers, similar question}
+    hit -- yes --> cached([Cached answer, cached: true])
+    hit -- no --> sup
+    cls -- REAL_TIME --> sup[Supervisor<br/>plans and delegates]
+
+    sup --> ma[Market data agent] & fa[Filings analyst] & pa[Portfolio agent]
+
+    ma -- getQuote, getCompanyNews, ... --> mdm[market-data-mcp] --> fh[Finnhub]
+    fa -- listFilings, getCompanyFacts --> flm[filings-mcp] --> ed[SEC EDGAR]
+    fa -- searchFilings RAG --> flm -- top 5 chunks --> vec[(pgvector<br/>10-K Risk Factors)]
+    pa -- getHoldings, getWatchlist<br/>+ user token --> pfm[portfolio-mcp] --> pdb[(Postgres<br/>portfolio)]
+
+    ma & fa & pa --> merge[Supervisor merges answers<br/>+ output guardrail]
+    merge --> ans([Answer + agent/tool trace<br/>stored in cache if CACHEABLE and no portfolio tool ran])
+```
+
 ## Prerequisites
 
 - Java 25
