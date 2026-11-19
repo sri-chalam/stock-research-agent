@@ -2,6 +2,7 @@ package info.saagar.stockagent.portfolio.config;
 
 import dev.langchain4j.community.mcp.server.McpServer;
 import dev.langchain4j.mcp.protocol.McpImplementation;
+import info.saagar.stockagent.portfolio.repository.DemoPortfolioSeeder;
 import info.saagar.stockagent.portfolio.repository.JdbcPortfolioRepository;
 import info.saagar.stockagent.portfolio.repository.PortfolioRepository;
 import info.saagar.stockagent.portfolio.tool.PortfolioTools;
@@ -22,6 +23,20 @@ public class PortfolioConfig {
   @Bean
   public PortfolioRepository portfolioRepository(JdbcClient jdbcClient) {
     return new JdbcPortfolioRepository(jdbcClient);
+  }
+
+  /// Seeds the demo users' portfolios on startup, after `schema.sql` has run.
+  ///
+  /// @param jdbcClient client over the portfolio database
+  /// @param user1Sub token `sub` of demo user 1, from `WORKOS_DEMO_USER_1_SUB`
+  /// @param user2Sub token `sub` of demo user 2, from `WORKOS_DEMO_USER_2_SUB`
+  /// @return the seeder, run once by Spring Boot after startup
+  @Bean
+  public DemoPortfolioSeeder demoPortfolioSeeder(
+      JdbcClient jdbcClient,
+      @Value("${stock-agent.demo-users.user-1-sub}") String user1Sub,
+      @Value("${stock-agent.demo-users.user-2-sub}") String user2Sub) {
+    return new DemoPortfolioSeeder(jdbcClient, user1Sub, user2Sub);
   }
 
   /// Builds the transport-agnostic MCP server over the portfolio tools.

@@ -18,20 +18,16 @@ import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.logging.AgentProvenanceListener;
 import info.saagar.stockagent.logging.RunProvenance;
 import info.saagar.stockagent.logging.RunProvenance.TokenCount;
-import info.saagar.stockagent.tool.McpUserHeaders;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
-import jakarta.validation.constraints.Pattern;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.slf4j.MDC;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
@@ -51,9 +47,6 @@ public class ChatController {
           FilingsAgentConfig.FILINGS_AGENT_NAME, FilingsAgent.PROMPT_ID,
           MarketDataAgentConfig.MARKET_DATA_AGENT_NAME, MarketDataAgent.PROMPT_ID,
           PortfolioAgentConfig.PORTFOLIO_AGENT_NAME, PortfolioAgent.PROMPT_ID);
-
-  /// Accepted `X-User-Id` values; any other value is rejected with 400.
-  private static final String USER_ID_PATTERN = "^[A-Za-z0-9-]{1,64}$";
 
   private final PromptClassifier promptClassifier;
   private final SemanticCache semanticCache;
@@ -102,26 +95,15 @@ public class ChatController {
 
   /// Classifies a prompt, then answers it from the semantic cache or with the Supervisor.
   ///
-  /// The user ID goes into the MDC for the run, and from there only onto MCP calls to
-  /// `portfolio-mcp` ([McpUserHeaders]); it never enters the prompt (SEC-4).
+  /// The caller's bearer token, already validated by Spring Security (`agent.chat` required), is
+  /// forwarded on every MCP call by [info.saagar.stockagent.tool.McpAuthorizationHeaders]; neither
+  /// the token nor the user's `sub` enters the prompt (SEC-4).
   ///
   /// @param chatRequest the user's prompt
-  /// @param userId the `X-User-Id` header, or `null` when absent; without it, portfolio questions
-  ///   get the portfolio tools' "No user identified" error
   /// @return the answer and the tools called
   @PostMapping
-  public ChatResponse chat(
-      @Valid @RequestBody ChatRequest chatRequest,
-      @RequestHeader(name = McpUserHeaders.USER_ID_HEADER, required = false)
-          @Pattern(regexp = USER_ID_PATTERN)
-          String userId) {
-    try (MDC.MDCCloseable userContext =
-        userId == null ? null : MDC.putCloseable(McpUserHeaders.USER_ID_MDC_KEY, userId)) {
-      return answer(chatRequest.message());
-    }
-  }
-
-  private ChatResponse answer(String message) {
+  public ChatResponse chat(@Valid @RequestBody ChatRequest chatRequest) {
+    String message = chatRequest.message();
     long startNanos = System.nanoTime();
     ClassifiedPrompt classifiedPrompt = promptClassifier.classify(message);
     CacheLookup cacheLookup = semanticCache.lookup(message, classifiedPrompt);

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import dev.langchain4j.data.message.ChatMessage;
 import dev.langchain4j.data.message.UserMessage;
 import dev.langchain4j.model.chat.ChatModel;
+import info.saagar.stockagent.common.testing.TestJwts;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.config.PortfolioAgentConfig;
@@ -15,7 +16,10 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,7 +49,11 @@ class ChatControllerTest {
     propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
     propertyRegistry.add("stock-agent.mcp-servers.filings.url", FAKE_FILINGS_MCP::url);
     propertyRegistry.add("stock-agent.mcp-servers.portfolio.url", FAKE_PORTFOLIO_MCP::url);
+    TestJwts.registerResourceServerProperties(propertyRegistry);
   }
+
+  private static final String USER_1_SUB = "user_test_1";
+  private static final String USER_1_TOKEN = TestJwts.token(USER_1_SUB, "agent.chat");
 
   @TestConfiguration
   static class FakeModelConfig {
@@ -60,11 +68,16 @@ class ChatControllerTest {
   /// Filings analyst then the Market data agent, a "doing" question to the Portfolio agent then the
   /// Market data agent, a "hold" question to the Portfolio agent, anything else to the Market data
   /// agent. Only user messages are matched, because the planner's system message mentions revenue
-  /// and holdings, and Zorblax asks for an unknown symbol.
+  /// and holdings, and Zorblax asks for an unknown symbol. Records every request's full message
+  /// text, so a test can check what reached the model.
   static class PromptRoutedChatModel implements ChatModel {
+
+    static final List<String> PROMPT_TEXTS = new CopyOnWriteArrayList<>();
+
     @Override
     public dev.langchain4j.model.chat.response.ChatResponse doChat(
         dev.langchain4j.model.chat.request.ChatRequest chatRequest) {
+      PROMPT_TEXTS.add(chatRequest.messages().toString());
       String conversationText =
           chatRequest.messages().stream()
               .filter(UserMessage.class::isInstance)
@@ -102,8 +115,14 @@ class ChatControllerTest {
     return HTTP_CLIENT.send(chatRequestBuilder.build(), HttpResponse.BodyHandlers.ofString());
   }
 
-  private ChatResponse postChat(String message, Map<String, String> requestHeaders)
-      throws Exception {
+  private static Map<String, String> bearer(String accessToken) {
+    return Map.of("Authorization", "Bearer " + accessToken);
+  }
+
+  /// Posts as demo user 1, with `agent.chat`, and expects 200.
+  private ChatResponse postChat(String message, Map<String, String> extraHeaders) throws Exception {
+    Map<String, String> requestHeaders = new HashMap<>(extraHeaders);
+    requestHeaders.putAll(bearer(USER_1_TOKEN));
     HttpResponse<String> httpResponse = sendChat(message, requestHeaders);
     assertThat(httpResponse.statusCode()).isEqualTo(200);
     return jsonMapper.readValue(httpResponse.body(), ChatResponse.class);
@@ -153,13 +172,11 @@ class ChatControllerTest {
   }
 
   @Test
-  void holdingsQuestionReadsTheHeaderUsersHoldingsThroughThePortfolioAgent() throws Exception {
-    String correlationId = "corr-holdings-alice";
+  void holdingsQuestionForwardsTheBearerTokenToPortfolioMcpButNotIntoAnyPrompt() throws Exception {
+    String correlationId = "corr-holdings-user-1";
 
     ChatResponse response =
-        postChat(
-            "What stocks do I hold?",
-            Map.of("X-User-Id", "alice", "X-Correlation-Id", correlationId));
+        postChat("What stocks do I hold?", Map.of("X-Correlation-Id", correlationId));
 
     assertThat(response.answer()).contains(FakeMcpServer.HOLDINGS_TEXT);
     assertThat(response.toolsCalled())
@@ -170,37 +187,22 @@ class ChatControllerTest {
             toolCallHeaders -> correlationId.equals(toolCallHeaders.get("X-Correlation-Id")))
         .singleElement()
         .satisfies(
-            toolCallHeaders -> assertThat(toolCallHeaders).containsEntry("X-User-Id", "alice"));
+            toolCallHeaders ->
+                assertThat(toolCallHeaders)
+                    .containsEntry("Authorization", "Bearer " + USER_1_TOKEN));
+    assertThat(PromptRoutedChatModel.PROMPT_TEXTS)
+        .isNotEmpty()
+        .noneMatch(promptText -> promptText.contains(USER_1_TOKEN))
+        .noneMatch(promptText -> promptText.contains(USER_1_SUB));
   }
 
   @Test
-  void holdingsQuestionWithoutUserRelaysTheNoUserError() throws Exception {
-    ChatResponse response = postChat("What do I hold?");
-
-    assertThat(response.answer()).contains(FakeMcpServer.NO_USER_TEXT);
-    assertThat(response.toolsCalled())
-        .extracting(ChatController.ToolCall::name)
-        .containsExactly("getHoldings");
-  }
-
-  @Test
-  void invalidUserIdIsRejectedWith400() throws Exception {
-    HttpResponse<String> httpResponse =
-        sendChat("What stocks do I hold?", Map.of("X-User-Id", "alice;drop"));
-
-    assertThat(httpResponse.statusCode()).isEqualTo(400);
-    assertThat(httpResponse.body()).contains("\"errorCode\":\"BAD_REQUEST\"");
-  }
-
-  @Test
-  void holdingsPerformanceQuestionChainsPortfolioIntoMarketDataWithoutForwardingTheUser()
+  void holdingsPerformanceQuestionChainsPortfolioIntoMarketDataForwardingTheTokenToBoth()
       throws Exception {
     String correlationId = "corr-holdings-doing";
 
     ChatResponse response =
-        postChat(
-            "How are my holdings doing today?",
-            Map.of("X-User-Id", "alice", "X-Correlation-Id", correlationId));
+        postChat("How are my holdings doing today?", Map.of("X-Correlation-Id", correlationId));
 
     assertThat(response.toolsCalled())
         .extracting(ChatController.ToolCall::agentName, ChatController.ToolCall::name)
@@ -211,6 +213,34 @@ class ChatControllerTest {
         .filteredOn(
             toolCallHeaders -> correlationId.equals(toolCallHeaders.get("X-Correlation-Id")))
         .isNotEmpty()
-        .allSatisfy(toolCallHeaders -> assertThat(toolCallHeaders).doesNotContainKey("X-User-Id"));
+        .allSatisfy(
+            toolCallHeaders ->
+                assertThat(toolCallHeaders)
+                    .containsEntry("Authorization", "Bearer " + USER_1_TOKEN));
+  }
+
+  @Test
+  void chatWithoutAValidTokenIsRejectedWith401() throws Exception {
+    assertThat(sendChat("price of Apple", Map.of()).statusCode()).isEqualTo(401);
+    assertThat(
+            sendChat("price of Apple", bearer(TestJwts.expiredToken(USER_1_SUB, "agent.chat")))
+                .statusCode())
+        .isEqualTo(401);
+    assertThat(
+            sendChat(
+                    "price of Apple",
+                    bearer(
+                        TestJwts.tokenFromIssuer(
+                            "https://evil.test.invalid", USER_1_SUB, "agent.chat")))
+                .statusCode())
+        .isEqualTo(401);
+  }
+
+  @Test
+  void chatWithoutAgentChatIsRejectedWith403() throws Exception {
+    HttpResponse<String> httpResponse =
+        sendChat("price of Apple", bearer(TestJwts.token(USER_1_SUB, "portfolio.read")));
+
+    assertThat(httpResponse.statusCode()).isEqualTo(403);
   }
 }

@@ -8,6 +8,7 @@ import dev.langchain4j.model.chat.listener.ChatModelListener;
 import dev.langchain4j.model.chat.listener.ChatModelResponseContext;
 import info.saagar.stockagent.agent.MarketDataAgent;
 import info.saagar.stockagent.agent.PortfolioAgent;
+import info.saagar.stockagent.common.testing.TestJwts;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
 import info.saagar.stockagent.config.PortfolioAgentConfig;
 import info.saagar.stockagent.config.PromptClassifierConfig;
@@ -18,6 +19,7 @@ import java.net.URI;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
@@ -55,7 +57,10 @@ class ChatLoggingTest {
     propertyRegistry.add("stock-agent.mcp-servers.market-data.url", FAKE_MARKET_DATA_MCP::url);
     propertyRegistry.add("stock-agent.mcp-servers.filings.url", FAKE_FILINGS_MCP::url);
     propertyRegistry.add("stock-agent.mcp-servers.portfolio.url", FAKE_PORTFOLIO_MCP::url);
+    TestJwts.registerResourceServerProperties(propertyRegistry);
   }
+
+  private static final String USER_1_TOKEN = TestJwts.token("user_test_1", "agent.chat");
 
   private static final String FAILING_PROMPT = "please fail";
   private static final String HOLDINGS_PERFORMANCE_PROMPT = "How are my holdings doing today?";
@@ -160,8 +165,11 @@ class ChatLoggingTest {
   @LocalServerPort private int port;
   @Autowired private JsonMapper jsonMapper;
 
-  private HttpResponse<String> postChat(String message, Map<String, String> requestHeaders)
+  /// Posts as demo user 1, with `agent.chat`, plus the given headers.
+  private HttpResponse<String> postChat(String message, Map<String, String> extraHeaders)
       throws Exception {
+    Map<String, String> requestHeaders = new HashMap<>(extraHeaders);
+    requestHeaders.put("Authorization", "Bearer " + USER_1_TOKEN);
     HttpRequest.Builder chatRequestBuilder =
         HttpRequest.newBuilder(URI.create("http://localhost:" + port + "/api/chat"))
             .header("Content-Type", "application/json")
@@ -256,9 +264,7 @@ class ChatLoggingTest {
     String correlationId = "corr-" + UUID.randomUUID();
 
     HttpResponse<String> httpResponse =
-        postChat(
-            HOLDINGS_PERFORMANCE_PROMPT,
-            Map.of("X-Correlation-Id", correlationId, "X-User-Id", "alice"));
+        postChat(HOLDINGS_PERFORMANCE_PROMPT, Map.of("X-Correlation-Id", correlationId));
 
     assertThat(httpResponse.statusCode()).isEqualTo(200);
     Map<String, Object> answerProvenance =
@@ -281,6 +287,7 @@ class ChatLoggingTest {
                     MarketDataAgent.PROMPT_ID,
                     "toolsUsed",
                     List.of("getQuote"))));
+    assertThat(capturedOutput.getOut()).doesNotContain(USER_1_TOKEN);
   }
 
   @Test
@@ -509,11 +516,9 @@ class ChatLoggingTest {
     String secondCorrelationId = "corr-" + UUID.randomUUID();
 
     HttpResponse<String> firstResponse =
-        postChat(
-            HOLDINGS_PROMPT, Map.of("X-Correlation-Id", firstCorrelationId, "X-User-Id", "alice"));
+        postChat(HOLDINGS_PROMPT, Map.of("X-Correlation-Id", firstCorrelationId));
     HttpResponse<String> secondResponse =
-        postChat(
-            HOLDINGS_PROMPT, Map.of("X-Correlation-Id", secondCorrelationId, "X-User-Id", "alice"));
+        postChat(HOLDINGS_PROMPT, Map.of("X-Correlation-Id", secondCorrelationId));
 
     for (HttpResponse<String> httpResponse : List.of(firstResponse, secondResponse)) {
       ChatController.ChatResponse chatResponse =

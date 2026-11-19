@@ -21,7 +21,6 @@ public class PortfolioTools {
 
   private static final Logger log = LoggerFactory.getLogger(PortfolioTools.class);
 
-  static final String NO_USER_MESSAGE = "No user identified; send X-User-Id";
   private static final String PORTFOLIO_UNAVAILABLE_MESSAGE =
       "The portfolio is unavailable; try again shortly.";
 
@@ -37,7 +36,7 @@ public class PortfolioTools {
   /// Returns the current user's holdings.
   ///
   /// @return ticker and shares per holding, ordered by ticker; empty when the user holds nothing
-  /// @throws IllegalStateException when no user is identified or the store fails
+  /// @throws IllegalStateException when the store fails
   @Tool(
       "Get the current user's paper-portfolio holdings: ticker and number of shares for each"
           + " position, ordered by ticker. Takes no arguments; the user is identified by the"
@@ -49,7 +48,7 @@ public class PortfolioTools {
   /// Returns the tickers on the current user's watchlist.
   ///
   /// @return tickers in alphabetical order; empty when the watchlist is empty
-  /// @throws IllegalStateException when no user is identified or the store fails
+  /// @throws IllegalStateException when the store fails
   @Tool(
       "Get the tickers on the current user's watchlist, in alphabetical order. Takes no"
           + " arguments; the user is identified by the request. An empty list means the"
@@ -60,13 +59,6 @@ public class PortfolioTools {
 
   private static <T> List<T> readForCurrentUser(
       String toolName, Function<String, List<T>> userScopedRead) {
-    if (!PortfolioUser.USER_ID.isBound()) {
-      log.atWarn()
-          .addKeyValue("eventName", "portfolioUserMissing")
-          .addKeyValue("eventData", Map.of("toolName", toolName))
-          .log("Portfolio tool called without a user");
-      throw new IllegalStateException(NO_USER_MESSAGE);
-    }
     long startNanos = System.nanoTime();
     try {
       List<T> userRows = userScopedRead.apply(PortfolioUser.USER_ID.get());

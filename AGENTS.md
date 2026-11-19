@@ -65,8 +65,8 @@ Package by layer under `info.saagar.stockagent`:
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`, `PortfolioAgent`) |
 | `classifier` | The prompt classifier, which is not an agent: its AI service (`ClassifierAiService`), output records (`Classification`, `FreshnessClass`, `ClassifiedPrompt`) and `PromptClassifier`, which validates tickers and falls back to `REAL_TIME` |
 | `cache` | The semantic cache, which is not an agent: `SemanticCache` (hit, miss and store rules), `SemanticCacheStore` with `JdbcSemanticCacheStore` (own `sem_cache` table, created by `sem-cache-schema.sql`) and `InMemorySemanticCacheStore` (tests), and its records (`CacheLookup`, `CacheCandidate`, `CacheEntry`) |
-| `tool` | Tool-call helpers (`ToolArguments`, `McpUserHeaders`: forwards the chat user's `X-User-Id` on MCP calls to `portfolio-mcp` only). agent-app has no `@Tool` classes: tools come from MCP servers |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`) |
+| `tool` | Tool-call helpers (`ToolArguments`, `McpAuthorizationHeaders`: forwards the chat user's bearer token, with the correlation headers, on every MCP call). agent-app has no `@Tool` classes: tools come from MCP servers |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`; `SecurityConfig`: OAuth2 resource server, `/api/**` needs `agent.chat`) |
 | `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `RunProvenance`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
@@ -98,10 +98,10 @@ Under `info.saagar.stockagent.portfolio` (application class `PortfolioMcpApplica
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: a copy of the `filings-mcp` controller (ADR 0010) that binds the `X-User-Id` header for each `tools/call` |
+| `controller` | `McpController`: a copy of the `filings-mcp` controller (ADR 0010) that requires a bearer token with `portfolio.read` for `tools/list` and `tools/call`, and binds the token's `sub` for each `tools/call` |
 | `tool` | `PortfolioTools` (`getHoldings`, `getWatchlist`) and `PortfolioUser` (the request's user ID as a `ScopedValue`) |
-| `repository` | `PortfolioRepository`, `JdbcPortfolioRepository` (`JdbcClient` over tables created and seeded by `schema.sql` and `data.sql`), `Holding` |
-| `config` | `PortfolioConfig`: repository and `McpServer` wiring |
+| `repository` | `PortfolioRepository`, `JdbcPortfolioRepository` (`JdbcClient` over tables created by `schema.sql`), `DemoPortfolioSeeder` (seeds the demo users' `sub` values from env vars), `Holding` |
+| `config` | `PortfolioConfig`: repository, seeder and `McpServer` wiring; `SecurityConfig`: OAuth2 resource server |
 
 ### `common`
 
@@ -111,6 +111,7 @@ Under `info.saagar.stockagent.common`, organised by package:
 |---|---|
 | `common.logging` | Request-context and structured-logging support (`LoggingContextFilter`; `StockAgentLogFormatter` when written) |
 | `common.web` | Web-layer support shared by the apps (`GlobalExceptionHandler`) |
+| `common.testing` (test fixtures, `src/testFixtures`) | `TestJwts`: signs WorkOS-shaped test JWTs and serves their JWK set on loopback for the resource-server tests; apps use it through `testImplementation(testFixtures(project(":common")))` |
 
 `LogEventNamesTest` runs in each app and scans that app's `src/main/java` plus `common/src/main/java`, so `eventName` values are unique per app.
 

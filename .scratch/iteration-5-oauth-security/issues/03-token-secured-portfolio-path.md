@@ -4,7 +4,7 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Notes
 
@@ -14,10 +14,10 @@
 
 ## Acceptance criteria
 
-- [ ] JUnit (test JWTs), agent-app: missing, expired or wrong-issuer token → 401; token without `agent.chat` → 403.
-- [ ] JUnit (test JWTs), `portfolio-mcp`: missing, expired or wrong-issuer token → 401; token without `portfolio.read` → 403.
-- [ ] JUnit, `portfolio-mcp`: the user comes from `sub`; a token for user 1 never returns user 2's holdings or watchlist.
-- [ ] `X-User-Id`, `McpUserHeaders` and the "No user identified" path are removed.
-- [ ] No log line contains the token; no prompt text contains the token or `sub` (SEC-4/5).
-- [ ] One request's `correlationId` still appears in agent-app and `portfolio-mcp` logs.
-- [ ] `./gradlew build` passes.
+- [x] JUnit (test JWTs), agent-app: missing, expired or wrong-issuer token → 401; token without `agent.chat` → 403.
+- [x] JUnit (test JWTs), `portfolio-mcp`: missing, expired or wrong-issuer token → 401; token without `portfolio.read` → 403.
+- [x] JUnit, `portfolio-mcp`: the user comes from `sub`; a token for user 1 never returns user 2's holdings or watchlist.
+- [x] `X-User-Id`, `McpUserHeaders` and the "No user identified" path are removed.
+- [x] No log line contains the token; no prompt text contains the token or `sub` (SEC-4/5).
+- [x] One request's `correlationId` still appears in agent-app and `portfolio-mcp` logs.
+- [x] `./gradlew build` passes.

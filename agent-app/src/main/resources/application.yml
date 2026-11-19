@@ -3,6 +3,18 @@ spring:
     name: agent-app
   config:
     import: classpath:common.yml
+  # OAuth2 resource server (SEC-2): standard properties only. WorkOS access tokens have no aud claim,
+  # so no audience is checked; SecurityConfig requires the agent.chat permission on /api/**.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Copied exactly from a real token's iss: https://api.workos.com/user_management/<client_id>
+          issuer-uri: ${WORKOS_ISSUER_URI}
+          # Set explicitly, so startup needs no OIDC discovery call to the issuer.
+          jwk-set-uri: ${WORKOS_JWK_SET_URI}
+          # WorkOS puts permissions in a "permissions" array; each becomes a SCOPE_<permission> authority.
+          authorities-claim-name: permissions
 
 server:
   port: 8080
@@ -44,7 +56,7 @@ stock-agent:
         - listFilings
         - getCompanyFacts
         - searchFilings
-    # Reads the user's holdings and watchlist. The user comes from X-User-Id on the MCP call.
+    # Reads the user's holdings and watchlist. The user comes from the forwarded token's sub.
     portfolio:
       model: claude-haiku-5-5
       max-tokens: 1024
@@ -91,7 +103,6 @@ stock-agent:
       url: ${FILINGS_MCP_URL:http://localhost:8082/mcp}
       protocol-version: 2025-11-25
       tool-execution-timeout: 10s
-    # The only server that receives the chat user's X-User-Id.
     portfolio:
       url: ${PORTFOLIO_MCP_URL:http://localhost:8084/mcp}
       protocol-version: 2025-11-25

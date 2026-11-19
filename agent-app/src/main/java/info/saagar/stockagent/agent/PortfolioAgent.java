@@ -8,7 +8,7 @@ import info.saagar.stockagent.config.PortfolioAgentConfig;
 
 /// The Portfolio agent: reads the current user's holdings and watchlist with the `portfolio-mcp`
 /// tools on its allowlist. The Supervisor calls it with a sub-question. The user is identified by
-/// the `X-User-Id` header on the MCP call, never by the sub-question.
+/// the forwarded bearer token's `sub` on the MCP call, never by the sub-question.
 public interface PortfolioAgent {
 
   /// ID of the system prompt version, taken from its filename and logged with every call.

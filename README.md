@@ -96,10 +96,10 @@ curl → agent-app :8080 (/api/chat, Supervisor → Filings analyst) → MCP cli
                                                                                                        └─ searchFilings → Postgres + pgvector (filings schema)
 ```
 
-The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. Until Iteration 5, the user comes from the optional `X-User-Id` header on `POST /api/chat` (`alice` or `bob` in the seed data); Iteration 5 removes the header and takes the user from the signed-in user's token (`sub`). `agent-app` forwards it only on MCP calls to `portfolio-mcp`, never to the other MCP servers and never in prompt text. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
+The Portfolio agent reads the user's holdings and watchlist from `portfolio-mcp` with `getHoldings` and `getWatchlist`. The user is the `sub` of the WorkOS access token sent to `POST /api/chat`. `agent-app` validates the token (it needs `agent.chat`) and forwards it unchanged as `Authorization: Bearer` on every MCP call (Option A, ADR 0001), never in prompt text. `portfolio-mcp` validates it again (it needs `portfolio.read`) and reads the user from `sub`. For "How are my holdings doing today?" the Supervisor asks the Portfolio agent for the tickers first, then the Market data agent for their quotes:
 
 ```
-curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfolio agent) → MCP client + X-User-Id → portfolio-mcp :8084 (/mcp, portfolio tools) → Postgres (portfolio schema)
+curl + Bearer token → agent-app :8080 (/api/chat, Supervisor → Portfolio agent) → MCP client + Bearer token → portfolio-mcp :8084 (/mcp, portfolio tools, user = sub) → Postgres (portfolio schema)
 ```
 
 ### 1. Set environment variables
@@ -116,6 +116,9 @@ curl -H 'X-User-Id: alice' → agent-app :8080 (/api/chat, Supervisor → Portfo
 | `PORTFOLIO_DB_PASSWORD` | `portfolio-mcp`, `postgres` | With Gradle, yes: the password of the `portfolio_mcp` database user. Compose defaults it to `portfolio-local-dev` |
 | `SEM_CACHE_DB_PASSWORD` | `agent-app`, `postgres` | With Gradle, yes: the password of the `sem_cache` database user (semantic cache). Compose defaults it to `sem-cache-local-dev` |
 | `POSTGRES_PASSWORD` | `postgres` | No; Compose defaults it to `postgres-local-dev` |
+| `WORKOS_ISSUER_URI` | `agent-app`, `portfolio-mcp` | Yes: the `iss` of a real WorkOS access token, `https://api.workos.com/user_management/<client_id>` |
+| `WORKOS_JWK_SET_URI` | `agent-app`, `portfolio-mcp` | Yes: `https://api.workos.com/sso/jwks/<client_id>` |
+| `WORKOS_DEMO_USER_1_SUB`, `WORKOS_DEMO_USER_2_SUB` | `portfolio-mcp` | Yes: the two demo users' `sub` (`user_...`); each gets a seeded demo portfolio on startup |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
@@ -140,11 +143,13 @@ export FILINGS_DB_PASSWORD=filings-local-dev
 
 # terminal 3: portfolio-mcp also needs the Compose Postgres
 export PORTFOLIO_DB_PASSWORD=portfolio-local-dev
+export WORKOS_ISSUER_URI=... WORKOS_JWK_SET_URI=... WORKOS_DEMO_USER_1_SUB=... WORKOS_DEMO_USER_2_SUB=...
 ./gradlew :portfolio-mcp:bootRun
 
 # terminal 4 (after all three MCP servers have started)
 export ANTHROPIC_API_KEY=...
 export SEM_CACHE_DB_PASSWORD=sem-cache-local-dev
+export WORKOS_ISSUER_URI=... WORKOS_JWK_SET_URI=...
 ./gradlew :agent-app:bootRun
 ```
 
@@ -153,7 +158,7 @@ export SEM_CACHE_DB_PASSWORD=sem-cache-local-dev
 Compose reads the keys from a git-ignored `.env` file in the project root. Each container receives only its own key. Compose starts `filings-mcp` and `portfolio-mcp` after Postgres is healthy, and `agent-app` after Postgres is healthy and `market-data-mcp`, `filings-mcp` and `portfolio-mcp` pass their health checks (`/actuator/health`). The database is disposable: `docker compose down` deletes it, with the semantic cache's answers, and `filings-mcp` re-ingests on its next start.
 
 ```bash
-cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT and ANTHROPIC_API_KEY
+cp .env.example .env            # then fill in FINNHUB_API_KEY, SEC_USER_AGENT, ANTHROPIC_API_KEY and the WORKOS_* values
 
 docker compose build --pull     # build the images; --pull refreshes the unpinned alpine:latest and amazonlinux:2023 bases (ADR 0012)
 docker compose up -d            # start the four apps, Postgres and log search
@@ -187,23 +192,29 @@ Loki has two labels: `service` (the compose service name, for example `filings-m
 
 Each prompt is grouped under the tool the agent is expected to call. The model picks the tool and its arguments, so `toolsCalled` in the response shows what it actually did.
 
+Every `/api/chat` call needs a WorkOS access token with `agent.chat` (and `portfolio.read` for portfolio questions). Sign in with the Bruno collection in `bruno/` (Authorization Code + PKCE) and copy its access token into `TOKEN`. Tokens last 5 minutes. Without a valid token the call returns 401; without `agent.chat`, 403.
+
+```bash
+export TOKEN=...   # access token from Bruno
+```
+
 **`getQuote`**: latest price, change, day range, open and previous close.
 
 ```bash
 # Company name resolved to a ticker
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What is the stock price of Apple?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getQuote","arguments":{"symbol":"AAPL"}}]}
 
 # Price move for the day
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"How is NVDA trading today? Include the percent change and day range."}'
 ```
 
 **`getCompanyProfile`**: name, exchange, industry, country, market cap, shares outstanding, IPO date and website.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Get Atlassian Company profile info. Stock symbol TEAM"}'
 # {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getCompanyProfile","arguments":{"symbol":"TEAM"}}]}
 ```
@@ -211,7 +222,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **`getCompanyNews`**: the 10 most recent articles about one company. The range is at most 30 days; with no dates it is the last 7 days.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Summarize the last week of news about MSFT."}'
 # {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getCompanyNews","arguments":{"symbol":"MSFT"}}]}
 ```
@@ -219,7 +230,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **`getMarketNews`**: the 10 most recent market-wide articles. Category is `general` or `merger`.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What are the latest merger and acquisition headlines?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getMarketNews","arguments":{"category":"merger"}}]}
 ```
@@ -228,18 +239,18 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 
 ```bash
 # One company
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"When does NVDA report earnings in the next 3 months, and what EPS is expected?"}'
 
 # All companies, one week
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Which companies report earnings in the next 5 days?"}'
 ```
 
 **`getBasicFinancials`**: 52-week high and low, P/E, price/book, EPS, dividend yield, beta, margins, ROE and debt/equity.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What are the P/E ratio, net margin and dividend yield for Coca-Cola?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"market-data","name":"getBasicFinancials","arguments":{"symbol":"KO"}}]}
 ```
@@ -247,7 +258,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **Several tools in one question**
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Give me an overview of Atlassian (TEAM): what the company is, its current price and its P/E."}'
 # toolsCalled includes getCompanyProfile, getQuote and getBasicFinancials
 ```
@@ -256,11 +267,11 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 
 ```bash
 # Unsupported (non-US) symbol
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Price of 7203.T on the Tokyo exchange?"}'
 
 # Date range over the 7-day limit for all-company earnings
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"List every company reporting earnings in the next 30 days."}'
 ```
 
@@ -269,27 +280,27 @@ Data is live from Finnhub, so answers vary. Only US-listed equities are supporte
 **`listFilings`** (Filings analyst): the 10 most recent filings of one form type, with sec.gov links.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"List Microsoft'\''s recent 10-K filings"}'
 # {"answer":"...","toolsCalled":[{"agentName":"filings","name":"listFilings","arguments":{"ticker":"MSFT","formType":"10-K"}}]}
 
 # Unconfigured ticker: the error lists the supported tickers
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"List IBM'\''s recent 10-Q filings"}'
 ```
 
 **`getCompanyFacts`** (Filings analyst): revenue, net income, gross profit, diluted EPS, total assets and cash for the last 3 fiscal years, from XBRL. Each value cites its form, period and accession number.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What was Apple'\''s revenue for the last 3 fiscal years?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"filings","name":"getCompanyFacts","arguments":{"ticker":"AAPL"}}]}
 ```
 
-**`getHoldings`** (Portfolio agent): the user's holdings, ticker and shares. The user comes from the `X-User-Id` header (`alice` or `bob`), never from the prompt.
+**`getHoldings`** (Portfolio agent): the user's holdings, ticker and shares. The user is the token's `sub`, never the prompt: each demo user sees only their own holdings.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What stocks do I hold?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getHoldings","arguments":{}}]}
 ```
@@ -297,7 +308,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **`getWatchlist`** (Portfolio agent): the tickers on the user's watchlist.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: bob' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What'\''s on my watchlist?"}'
 # {"answer":"...","toolsCalled":[{"agentName":"portfolio","name":"getWatchlist","arguments":{}}]}
 ```
@@ -305,7 +316,7 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **Both portfolio tools in one question**
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What do I hold, and what is on my watchlist?"}'
 # toolsCalled includes getHoldings and getWatchlist
 ```
@@ -313,20 +324,16 @@ curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' 
 **Holdings, then their quotes** (Portfolio agent, then Market data agent). The `answerProvenance` log line lists the `portfolio` agent first, then `market-data` with one `getQuote` per held ticker.
 
 ```bash
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"How are my holdings doing today?"}'
 # toolsCalled: getHoldings (portfolio), then getQuote for AAPL, MSFT and NVDA (market-data)
 ```
 
-**No user, or an invalid one**
+**No token, or a bad one**
 
 ```bash
-# Without X-User-Id, the answer relays "No user identified; send X-User-Id"
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
-  -d '{"message":"What do I hold?"}'
-
-# An X-User-Id that does not match ^[A-Za-z0-9-]{1,64}$ returns 400
-curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice;bob' \
+# No token, an expired one or one from another issuer: 401
+curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
   -d '{"message":"What do I hold?"}'
 ```
 
@@ -334,24 +341,24 @@ curl -i -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/jso
 
 ```bash
 # Paraphrase: the first call runs the agents and stores the answer; the second is served from the cache
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What risks does Apple list in its latest 10-K?"}'
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What are Apple'\''s 10-K risk factors?"}'
 # {"answer":"...","toolsCalled":[],"cached":true}
 
 # Different ticker set: a miss, so the agents run
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What are Microsoft'\''s 10-K risk factors?"}'
 # "cached":false
 
 # REAL_TIME question: the cache is skipped every time
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"Price of Apple"}'
 # "cached":false
 
 # Portfolio answer: never stored, so repeating it runs the agents again
-curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+curl -X POST http://127.0.0.1:8080/api/chat -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"message":"What stocks do I hold?"}'
 # "cached":false
 ```
@@ -376,15 +383,15 @@ curl -s -X POST http://127.0.0.1:8081/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":3,"method":"tools/call","params":{"name":"getMarketNews","arguments":{"category":"crypto"}}}'
 ```
 
-`portfolio-mcp` serves `getHoldings` and `getWatchlist` for two seeded users, `alice` and `bob`. Neither tool takes arguments: the user comes from the `X-User-Id` header, which Iteration 5 removes in favour of the token's `sub`. `schema.sql` and `data.sql` create and seed the tables on every start without duplicating rows.
+`portfolio-mcp` serves `getHoldings` and `getWatchlist` for the two demo users whose `sub` values are set in `WORKOS_DEMO_USER_1_SUB` and `WORKOS_DEMO_USER_2_SUB`. `schema.sql` creates the tables and `DemoPortfolioSeeder` seeds them on every start without duplicating rows. Neither tool takes arguments: the user is the bearer token's `sub`. `tools/list` and `tools/call` need a token with `portfolio.read` (401 without a token, 403 without the permission); `initialize` and `ping` need none, because `agent-app`'s MCP client sends them outside any chat request.
 
 ```bash
-# alice's holdings: [{"ticker":"AAPL","shares":50},...]; send bob for bob's
-curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' -H 'X-User-Id: alice' \
+# The signed-in user's holdings: [{"ticker":"AAPL","shares":50},...]
+curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' -H "Authorization: Bearer $TOKEN" \
   -d '{"jsonrpc":"2.0","id":1,"method":"tools/call","params":{"name":"getHoldings","arguments":{}}}'
 
-# Without X-User-Id: "isError": true, "No user identified; send X-User-Id"
-curl -s -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
+# Without a token: 401
+curl -i -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":{"name":"getWatchlist","arguments":{}}}'
 ```
 

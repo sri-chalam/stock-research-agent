@@ -15,11 +15,10 @@ import tools.jackson.databind.json.JsonMapper;
 
 /// In-process MCP server over Streamable HTTP (JSON responses), standing in for our MCP servers.
 ///
-/// It lists the tool names it was started with. `getHoldings` returns a synthetic holding when the
-/// call carries `X-User-Id` and an `isError` result without it, as `portfolio-mcp` does. Every
+/// It lists the tool names it was started with. `getHoldings` returns a synthetic holding. Every
 /// other tool answers like `getQuote`: a synthetic quote for `AAPL` and an `isError` result for any
-/// other symbol, as `market-data-mcp` does. It records the correlation and user headers of each
-/// `tools/call`.
+/// other symbol, as `market-data-mcp` does. It records the correlation and `Authorization` headers
+/// of each `tools/call`.
 public final class FakeMcpServer implements AutoCloseable {
 
   /// The synthetic quote text `getQuote` returns for `AAPL`.
@@ -28,14 +27,11 @@ public final class FakeMcpServer implements AutoCloseable {
           + "\"high\":191.05,\"low\":188.1,\"open\":190.2,\"previousClose\":190.12,"
           + "\"asOfTime\":\"2026-05-01T14:30:00Z\"}";
 
-  /// The synthetic holdings text `getHoldings` returns for any identified user.
+  /// The synthetic holdings text `getHoldings` returns.
   public static final String HOLDINGS_TEXT = "[{\"ticker\":\"AAPL\",\"shares\":50}]";
 
-  /// The error text `getHoldings` returns when the call carries no `X-User-Id`.
-  public static final String NO_USER_TEXT = "No user identified; send X-User-Id";
-
   private static final List<String> RECORDED_HEADER_NAMES =
-      List.of("X-Correlation-Id", "X-Trace-Id", "X-User-Id");
+      List.of("X-Correlation-Id", "X-Trace-Id", "Authorization");
   private static final JsonMapper JSON_MAPPER = JsonMapper.builder().build();
 
   private final HttpServer httpServer;
@@ -69,8 +65,8 @@ public final class FakeMcpServer implements AutoCloseable {
     return "http://127.0.0.1:" + httpServer.getAddress().getPort() + "/mcp";
   }
 
-  /// Returns the `X-Correlation-Id`, `X-Trace-Id` and `X-User-Id` headers of each `tools/call`, in
-  /// order.
+  /// Returns the `X-Correlation-Id`, `X-Trace-Id` and `Authorization` headers of each `tools/call`,
+  /// in order.
   ///
   /// @return headers by name; a header that was not sent is absent
   public List<Map<String, String>> toolCallHeaders() {
@@ -101,11 +97,11 @@ public final class FakeMcpServer implements AutoCloseable {
         case "initialize" -> jsonRpcReply.put("result", initializeResult(jsonRpcMessage));
         case "tools/list" -> jsonRpcReply.put("result", Map.of("tools", toolDefinitions()));
         case "tools/call" -> {
-          Map<String, String> recordedHeaders = recordToolCallHeaders(httpExchange);
+          recordToolCallHeaders(httpExchange);
           jsonRpcReply.put(
               "result",
               "getHoldings".equals(jsonRpcMessage.path("params").path("name").asString())
-                  ? getHoldingsResult(recordedHeaders.containsKey("X-User-Id"))
+                  ? Map.of("content", List.of(Map.of("type", "text", "text", HOLDINGS_TEXT)))
                   : getQuoteResult(jsonRpcMessage));
         }
         case "ping" -> jsonRpcReply.put("result", Map.of());
@@ -162,13 +158,7 @@ public final class FakeMcpServer implements AutoCloseable {
     return Map.of("content", List.of(Map.of("type", "text", "text", noQuoteText)), "isError", true);
   }
 
-  private static Map<String, Object> getHoldingsResult(boolean userIdentified) {
-    return userIdentified
-        ? Map.of("content", List.of(Map.of("type", "text", "text", HOLDINGS_TEXT)))
-        : Map.of("content", List.of(Map.of("type", "text", "text", NO_USER_TEXT)), "isError", true);
-  }
-
-  private Map<String, String> recordToolCallHeaders(HttpExchange httpExchange) {
+  private void recordToolCallHeaders(HttpExchange httpExchange) {
     Map<String, String> recordedHeaders = new HashMap<>();
     for (String headerName : RECORDED_HEADER_NAMES) {
       String headerValue = httpExchange.getRequestHeaders().getFirst(headerName);
@@ -176,8 +166,6 @@ public final class FakeMcpServer implements AutoCloseable {
         recordedHeaders.put(headerName, headerValue);
       }
     }
-    Map<String, String> toolCallHeaderValues = Map.copyOf(recordedHeaders);
-    toolCallHeaders.add(toolCallHeaderValues);
-    return toolCallHeaderValues;
+    toolCallHeaders.add(Map.copyOf(recordedHeaders));
   }
 }

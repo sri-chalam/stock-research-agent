@@ -4,7 +4,7 @@ import java.util.List;
 import org.springframework.jdbc.core.simple.JdbcClient;
 
 /// [PortfolioRepository] over the `holding` and `watchlist_item` tables, which `schema.sql` creates
-/// and `data.sql` seeds on startup.
+/// and [DemoPortfolioSeeder] seeds on startup.
 public class JdbcPortfolioRepository implements PortfolioRepository {
 
   private final JdbcClient jdbcClient;
