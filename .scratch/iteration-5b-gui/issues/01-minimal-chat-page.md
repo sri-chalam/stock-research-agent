@@ -13,6 +13,7 @@
 - Answer rendered as plain text with URLs turned into links (no Markdown library, no HTML injection).
 - Trace panel from the existing `toolsCalled` and `cached` fields only (e.g. "Market data agent → `getQuote(AAPL)`", "cached: yes"). `ChatResponse` is not extended.
 - Latest question and answer only; no history.
+- A "Try asking" card, always visible in the right column (below the trace once there is an answer), lists five example prompts, one per agent path (portfolio, quote, filings, portfolio + market, news). A click fills the prompt box without sending.
 - Theme (Pico CSS variables), light mode only: beige page and card backgrounds, brown text, headings and borders, green primary buttons, links, "cached: yes" and gains, red errors, Sign out and drops. Centred single column, rounded cards, sticky prompt bar.
 
 ## Acceptance criteria

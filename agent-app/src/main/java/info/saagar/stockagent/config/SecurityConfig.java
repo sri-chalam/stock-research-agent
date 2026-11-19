@@ -11,7 +11,8 @@ import org.springframework.security.web.SecurityFilterChain;
 /// OAuth2 resource server: the issuer, JWK set and authorities claim come only from the
 /// `spring.security.oauth2.resourceserver.jwt.*` properties (SEC-2). `/api/**` needs the
 /// `agent.chat` permission; the Docker Compose healthcheck reaches `/actuator/health` without a
-/// token.
+/// token. The chat page (`/`, served from `static/index.html`) and its `/ui-config` are public: the
+/// page signs the user in and then sends the token on every `/api/**` call.
 @Configuration
 public class SecurityConfig {
 
@@ -26,7 +27,7 @@ public class SecurityConfig {
         .authorizeHttpRequests(
             requests ->
                 requests
-                    .requestMatchers("/actuator/health")
+                    .requestMatchers("/actuator/health", "/", "/index.html", "/ui-config")
                     .permitAll()
                     .requestMatchers("/api/**")
                     .hasAuthority("SCOPE_agent.chat")

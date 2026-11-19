@@ -111,6 +111,8 @@ services:
       SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
       WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
+      # The chat page's sign-in (public Client ID). Empty: the page shows a setup error.
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
     # agent-app fails to start when Postgres (semantic cache) or any MCP server is unreachable.
     depends_on:
       postgres:

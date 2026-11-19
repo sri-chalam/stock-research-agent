@@ -119,6 +119,7 @@ curl + Bearer token → agent-app :8080 (/api/chat, Supervisor → Portfolio age
 | `WORKOS_ISSUER_URI` | `agent-app`, `portfolio-mcp` | Yes: the `iss` of a real WorkOS access token, `https://api.workos.com/user_management/<client_id>` |
 | `WORKOS_JWK_SET_URI` | `agent-app`, `portfolio-mcp` | Yes: `https://api.workos.com/sso/jwks/<client_id>` |
 | `WORKOS_DEMO_USER_1_SUB`, `WORKOS_DEMO_USER_2_SUB` | `portfolio-mcp` | Yes: the two demo users' `sub` (`user_...`); each gets a seeded demo portfolio on startup |
+| `WORKOS_CLIENT_ID` | `agent-app` | For the chat page at `/`: the WorkOS application's Client ID (`client_...`). Without it the page shows a setup error |
 
 The Finnhub key stays inside `market-data-mcp`; `agent-app` never sees it.
 
@@ -187,6 +188,18 @@ Loki has two labels: `service` (the compose service name, for example `filings-m
 # Postgres plain-text logs
 {service="postgres"} |= "ERROR"
 ```
+
+### Chat page
+
+Open `http://localhost:8080/`, sign in with WorkOS, and ask a question. The page shows the answer and a trace of the agents and tools that produced it (`toolsCalled`), with `cached: yes` when the answer came from the semantic cache. Only the latest question and answer are kept.
+
+One-time WorkOS dashboard setup for the application whose Client ID is in `WORKOS_CLIENT_ID`:
+
+- Redirects → Redirect URIs: add `http://localhost:8080` (no trailing slash; `authkit-js` returns to the page's origin).
+- Redirects → Sign-out redirects: add `http://localhost:8080`, and set App homepage URL to `http://localhost:8080`. WorkOS falls back to the homepage URL when `return_to` is not on the list; with neither set, Sign out ends on the `app-homepage-url-not-found` error page.
+- Authentication → Sessions → Cross-Origin Resource Sharing (CORS) → Manage: add `http://localhost:8080`, because `authkit-js` exchanges the sign-in code with WorkOS from the browser. Without it, the `authenticate` request fails with a CORS error and the page stays signed out. (The browser's preflight succeeds for any origin; only the real request is checked.)
+
+On `localhost`, `authkit-js` runs in dev mode and keeps the refresh token in `localStorage`; Sign out removes it.
 
 ### 3. Sample prompts
 

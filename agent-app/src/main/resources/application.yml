@@ -23,6 +23,11 @@ server:
 # Model IDs are configured per agent here, never hard-coded. The API key comes from the
 # ANTHROPIC_API_KEY environment variable.
 stock-agent:
+  # The chat page at / (static/index.html) reads these through GET /ui-config, without a token.
+  ui:
+    # WorkOS dashboard → Applications → your app → Client ID (client_...). Public, not a secret.
+    # Empty: the page shows a setup error instead of the sign-in button.
+    workos-client-id: ${WORKOS_CLIENT_ID:}
   agents:
     # Plans each request, delegates sub-questions to the specialist agents below and merges their
     # answers. max-steps caps the specialist invocations per request. The planner writes the final
