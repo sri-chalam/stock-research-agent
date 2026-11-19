@@ -14,7 +14,7 @@
 - Trace panel from the existing `toolsCalled` and `cached` fields only (e.g. "Market data agent → `getQuote(AAPL)`", "cached: yes"). `ChatResponse` is not extended.
 - Latest question and answer only; no history.
 - A "Try asking" card, always visible in the right column (below the trace once there is an answer), lists five example prompts, one per agent path (portfolio, quote, filings, portfolio + market, news). A click fills the prompt box without sending.
-- Theme (Pico CSS variables), light mode only: beige page and card backgrounds, brown text, headings and borders, green primary buttons, links, "cached: yes" and gains, red errors, Sign out and drops. Centred single column, rounded cards, sticky prompt bar.
+- Theme (Pico CSS variables), light mode only, soft blush/mauve with no blue: off-white page (`#FBF7F9`) and white cards, plum-grey text (`#3A2E39`), mauve primary buttons and "cached: yes" badge (`#EBD5E6`), plum links (`#8E4F86`), green gains (`#2F7356`), red errors and drops (`#A8404F`). Inter for text, JetBrains Mono for tool names. Two columns on wide screens (answer; trace and examples), one on phones; rounded cards, sticky prompt bar.
 
 ## Acceptance criteria
 
