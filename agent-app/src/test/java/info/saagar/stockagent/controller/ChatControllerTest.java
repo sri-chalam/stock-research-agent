@@ -220,6 +220,25 @@ class ChatControllerTest {
   }
 
   @Test
+  void messageOverTheLengthLimitIsRejectedWith400() throws Exception {
+    String overlongMessage = "a".repeat(ChatController.MAX_MESSAGE_LENGTH + 1);
+
+    HttpResponse<String> httpResponse = sendChat(overlongMessage, bearer(USER_1_TOKEN));
+
+    assertThat(httpResponse.statusCode()).isEqualTo(400);
+  }
+
+  @Test
+  void messageAtTheLengthLimitIsAccepted() throws Exception {
+    String longestAllowedMessage =
+        "price of Apple " + "a".repeat(ChatController.MAX_MESSAGE_LENGTH - 15);
+
+    ChatResponse response = postChat(longestAllowedMessage);
+
+    assertThat(response.answer()).contains("189.42");
+  }
+
+  @Test
   void chatWithoutAValidTokenIsRejectedWith401() throws Exception {
     assertThat(sendChat("price of Apple", Map.of()).statusCode()).isEqualTo(401);
     assertThat(

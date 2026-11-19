@@ -35,7 +35,8 @@ public sealed interface CacheLookup {
 
   /// The cache was not searched, so the answer is not stored either.
   ///
-  /// @param skipReason `disabled`, `realTime` or `lookupFailed`
+  /// @param skipReason `disabled`, `realTime` or `lookupFailed`; `guardrailBlocked` in
+  ///   `answerProvenance` when the input guardrail refused the prompt before any lookup
   record Skipped(String skipReason) implements CacheLookup {
     @Override
     public String cacheOutcome() {

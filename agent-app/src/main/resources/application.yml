@@ -71,11 +71,12 @@ stock-agent:
         - getHoldings
         - getWatchlist
   # The prompt classifier: one LLM call per /api/chat prompt, before the Supervisor, returning the
-  # prompt's freshness class (REAL_TIME or CACHEABLE) and tickers. Not an agent: no tools, no memory.
+  # prompt's freshness class (REAL_TIME or CACHEABLE), tickers and the input guardrail flags
+  # (injectionSuspected, adviceRequest). Not an agent: no tools, no memory.
   # The prompt is read from prompts/<prompt-id>.txt.
   classifier:
     model: claude-haiku-5-5
-    prompt-id: classifier-v1
+    prompt-id: classifier-v2
     max-tokens: 256
     timeout: 10s
   # Answers CACHEABLE prompts from earlier answers to similar questions with the same ticker set.

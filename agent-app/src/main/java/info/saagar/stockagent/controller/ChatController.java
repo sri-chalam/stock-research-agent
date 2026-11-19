@@ -9,6 +9,7 @@ import info.saagar.stockagent.agent.PortfolioAgent;
 import info.saagar.stockagent.cache.CacheLookup;
 import info.saagar.stockagent.cache.SemanticCache;
 import info.saagar.stockagent.classifier.ClassifiedPrompt;
+import info.saagar.stockagent.classifier.InputGuardrailVerdict;
 import info.saagar.stockagent.classifier.PromptClassifier;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.MarketDataAgentConfig;
@@ -21,6 +22,7 @@ import info.saagar.stockagent.logging.RunProvenance.TokenCount;
 import info.saagar.stockagent.tool.ToolArguments;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.Size;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -32,14 +34,23 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RestController;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Synchronous chat endpoint: classifies each prompt, answers it from the semantic cache when a
-/// similar enough question was answered before, and otherwise with the Supervisor, which delegates
-/// to the specialist agents.
+/// Synchronous chat endpoint: classifies each prompt, refuses it when the input guardrail flags it,
+/// answers it from the semantic cache when a similar enough question was answered before, and
+/// otherwise with the Supervisor, which delegates to the specialist agents.
 @RestController
 @RequestMapping("/api/chat")
 public class ChatController {
 
   private static final Logger log = LoggerFactory.getLogger(ChatController.class);
+
+  /// Longest chat message accepted, in characters; a longer one gets 400.
+  public static final int MAX_MESSAGE_LENGTH = 2000;
+
+  /// The fixed answer to a prompt the input guardrail blocks.
+  public static final String GUARDRAIL_REFUSAL =
+      "I can't help with that. I'm a research assistant for US-listed stocks: I can look up"
+          + " quotes, company profiles, news, earnings dates and SEC filings, and show your"
+          + " holdings and watchlist. I don't give buy or sell recommendations.";
 
   /// Prompt version of each specialist agent, logged per agent call (AG-1).
   private static final Map<String, String> PROMPT_ID_BY_AGENT_NAME =
@@ -76,8 +87,8 @@ public class ChatController {
 
   /// A user's chat prompt.
   ///
-  /// @param message the question to answer
-  public record ChatRequest(@NotBlank String message) {}
+  /// @param message the question to answer; at most [#MAX_MESSAGE_LENGTH] characters
+  public record ChatRequest(@NotBlank @Size(max = MAX_MESSAGE_LENGTH) String message) {}
 
   /// A tool a specialist agent called while answering.
   ///
@@ -89,11 +100,12 @@ public class ChatController {
   /// The answer and the tools that produced it.
   ///
   /// @param answer answer text
-  /// @param toolsCalled tools called, in order; empty for a cached answer
+  /// @param toolsCalled tools called, in order; empty for a cached answer or a refusal
   /// @param cached `true` when the answer came from the semantic cache and no agents ran
   public record ChatResponse(String answer, List<ToolCall> toolsCalled, boolean cached) {}
 
-  /// Classifies a prompt, then answers it from the semantic cache or with the Supervisor.
+  /// Classifies a prompt, then refuses it when the input guardrail blocks it, or else answers it
+  /// from the semantic cache or with the Supervisor. A refusal looks up and stores nothing.
   ///
   /// The caller's bearer token, already validated by Spring Security (`agent.chat` required), is
   /// forwarded on every MCP call by [info.saagar.stockagent.tool.McpAuthorizationHeaders]; neither
@@ -106,6 +118,22 @@ public class ChatController {
     String message = chatRequest.message();
     long startNanos = System.nanoTime();
     ClassifiedPrompt classifiedPrompt = promptClassifier.classify(message);
+    InputGuardrailVerdict inputGuardrailVerdict = classifiedPrompt.inputGuardrailVerdict();
+    if (inputGuardrailVerdict.blocked()) {
+      log.atWarn()
+          .addKeyValue("eventName", "guardrailBlocked")
+          .addKeyValue("eventData", Map.of("blockReason", inputGuardrailVerdict))
+          .log("Prompt refused by the input guardrail");
+      RunProvenance classifierOnlyProvenance = new RunProvenance();
+      addClassifierResponse(classifierOnlyProvenance, classifiedPrompt);
+      logAnswerProvenance(
+          classifierOnlyProvenance,
+          new CacheLookup.Skipped("guardrailBlocked"),
+          inputGuardrailVerdict,
+          null,
+          startNanos);
+      return new ChatResponse(GUARDRAIL_REFUSAL, List.of(), false);
+    }
     CacheLookup cacheLookup = semanticCache.lookup(message, classifiedPrompt);
     if (cacheLookup instanceof CacheLookup.Hit cacheHit) {
       RunProvenance classifierOnlyProvenance = new RunProvenance();
@@ -113,6 +141,7 @@ public class ChatController {
       logAnswerProvenance(
           classifierOnlyProvenance,
           cacheLookup,
+          inputGuardrailVerdict,
           cacheHit.cachedAnswer().runTotalTokens(),
           startNanos);
       return new ChatResponse(cacheHit.cachedAnswer().answer(), List.of(), true);
@@ -130,7 +159,7 @@ public class ChatController {
                     agentCall.toolExecutions().stream()
                         .map(toolExecution -> toToolCall(agentCall.agentName(), toolExecution)))
             .toList();
-    logAnswerProvenance(runProvenance, cacheLookup, null, startNanos);
+    logAnswerProvenance(runProvenance, cacheLookup, inputGuardrailVerdict, null, startNanos);
     return new ChatResponse(supervisorResult.result(), toolsCalled, false);
   }
 
@@ -150,11 +179,15 @@ public class ChatController {
   }
 
   /// Logs the one `answerProvenance` line that says which agents, prompts and tools made the
-  /// answer, which model answered each agent and the classifier, how many tokens each used, and the
-  /// cache outcome. On a hit no agents ran, so only the classifier's tokens are listed, and
-  /// `tokensSaved` is the stored run's total.
+  /// answer, which model answered each agent and the classifier, how many tokens each used, the
+  /// input guardrail verdict and the cache outcome. On a hit or a refusal no agents ran, so only
+  /// the classifier's tokens are listed; on a hit `tokensSaved` is the stored run's total.
   private static void logAnswerProvenance(
-      RunProvenance runProvenance, CacheLookup cacheLookup, Long tokensSaved, long startNanos) {
+      RunProvenance runProvenance,
+      CacheLookup cacheLookup,
+      InputGuardrailVerdict inputGuardrailVerdict,
+      Long tokensSaved,
+      long startNanos) {
     List<Map<String, Object>> agentsUsed =
         runProvenance.agentCalls().stream()
             .map(
@@ -178,6 +211,7 @@ public class ChatController {
     provenanceData.put("agentName", SupervisorAgentConfig.SUPERVISOR_AGENT_NAME);
     provenanceData.put("promptId", SupervisorAgentConfig.SUPERVISOR_PROMPT_ID);
     provenanceData.put("agentsUsed", agentsUsed);
+    provenanceData.put("inputGuardrail", inputGuardrailVerdict);
     provenanceData.put("cacheOutcome", cacheLookup.cacheOutcome());
     if (tokensSaved != null) {
       provenanceData.put("tokensSaved", tokensSaved);
