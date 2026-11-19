@@ -149,6 +149,13 @@ class ChatControllerTest {
   }
 
   @Test
+  void supervisorAnswerEndsWithTheDisclaimer() throws Exception {
+    ChatResponse response = postChat("price of Apple");
+
+    assertThat(response.answer()).endsWith("\n\nNot investment advice.");
+  }
+
+  @Test
   void unknownSymbolRelaysReadableMessage() throws Exception {
     ChatResponse response = postChat("price of Zorblax");
 
