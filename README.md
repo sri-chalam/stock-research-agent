@@ -42,6 +42,14 @@ Later, the goal is to use software factories: automated pipelines in which agent
 
 Built with Claude Opus 5.5 in Claude Code, using Matt Pocock's AI skills and the author's own skills.
 
+### Lessons from building with Claude Code
+
+Claude was excellent overall. A few problems kept coming back:
+
+- **Over-engineering.** It often proposed far more than the task needed: extra features and production-grade options for a small task, even though CLAUDE.md says to keep things simple. I had to keep reminding it that this project is for practising and refreshing AI concepts, not for building every feature in full.
+- **Commit messages miss the main change.** When asked for a one- or two-line Git commit message for the changes made not committed, it sometimes described a side change instead of the main one. For example, a session that added a new feature got a Git commit message saying the docs were updated.
+- **GUI mistakes it couldn't see.** The first chat page had no visible prompt box, and Claude didn't notice. Giving it a way to check the page itself, such as a browser MCP or explicit checks to run, would probably have caught this.
+
 ## Prerequisites
 
 - Java 25
