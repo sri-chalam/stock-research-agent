@@ -128,6 +128,18 @@ Under `info.saagar.stockagent.common`, organised by package:
 ./gradlew :portfolio-mcp:bootRun    # start the portfolio MCP server (127.0.0.1:8084)
 ```
 
+### Run with Docker Compose
+
+```bash
+docker compose up -d --build                          # build all images and start the full stack
+docker compose up -d --build --no-deps agent-app      # rebuild and restart one app (others keep running)
+docker compose build agent-app                        # build one image without starting it
+docker compose logs -f agent-app                      # follow one app's logs
+docker compose down                                   # stop and remove the stack
+```
+
+Service names: `agent-app`, `market-data-mcp`, `filings-mcp`, `portfolio-mcp`.
+
 ## 5. Code Style
 
 - UTF-8 encoding enforced in compileJava.
