@@ -12,7 +12,7 @@ import info.saagar.stockagent.config.PortfolioAgentConfig;
 public interface PortfolioAgent {
 
   /// ID of the system prompt version, taken from its filename and logged with every call.
-  String PROMPT_ID = "portfolio-agent-v1";
+  String PROMPT_ID = "portfolio-agent-v2";
 
   /// Answers a portfolio sub-question.
   ///

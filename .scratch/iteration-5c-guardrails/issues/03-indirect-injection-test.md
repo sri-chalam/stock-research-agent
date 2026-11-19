@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Acceptance criteria
 
-- [ ] Specialist system prompts state that tool output is untrusted data, not instructions (new prompt versions, logged as `promptId`).
-- [ ] JUnit: a fake MCP tool returns hostile text; the Market data agent's available tools never include `getHoldings` or `getWatchlist`, and no portfolio tool executes.
-- [ ] `./gradlew build` passes.
+- [x] Specialist system prompts state that tool output is untrusted data, not instructions (new prompt versions, logged as `promptId`).
+- [x] JUnit: a fake MCP tool returns hostile text; the Market data agent's available tools never include `getHoldings` or `getWatchlist`, and no portfolio tool executes.
+- [x] `./gradlew build` passes.

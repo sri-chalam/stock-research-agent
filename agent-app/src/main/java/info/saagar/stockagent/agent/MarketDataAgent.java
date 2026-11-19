@@ -11,7 +11,7 @@ import info.saagar.stockagent.config.MarketDataAgentConfig;
 public interface MarketDataAgent {
 
   /// ID of the system prompt version, taken from its filename and logged with every call.
-  String PROMPT_ID = "market-data-agent-v2";
+  String PROMPT_ID = "market-data-agent-v3";
 
   /// Answers a market-data sub-question.
   ///
