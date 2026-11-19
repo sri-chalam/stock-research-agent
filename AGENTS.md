@@ -75,10 +75,10 @@ Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpAppli
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: the `POST /mcp` Streamable HTTP transport around the LangChain4j `McpServer` |
+| `controller` | `McpController`: the `POST /mcp` Streamable HTTP transport around the LangChain4j `McpServer`; requires a bearer token with `marketdata.read` for `tools/list` and `tools/call` |
 | `tool` | LangChain4j `@Tool` classes served over MCP and their helpers (`MarketDataTools`, `TickerSymbols`) |
 | `provider` | Finnhub client interface, implementation and result records (`FinnhubClient`, `RestClientFinnhubClient`, `Quote`, `MarketDataException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`; `SecurityConfig`: OAuth2 resource server) |
 
 ### `filings-mcp`
 
@@ -86,10 +86,10 @@ Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) |
+| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) that requires `filings.read` instead of `marketdata.read` |
 | `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`, `FilingChunk`) |
 | `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store; `SecurityConfig`: OAuth2 resource server) |
 | `rag` | Filings RAG ingestion: startup ingestion on a virtual thread, section extraction and chunk metadata keys (`FilingIngestion`, `FilingSections`, `FilingChunkMetadata`) |
 
 ### `portfolio-mcp`

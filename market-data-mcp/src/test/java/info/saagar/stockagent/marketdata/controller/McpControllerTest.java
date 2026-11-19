@@ -6,7 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import info.saagar.stockagent.common.testing.TestJwts;
 import info.saagar.stockagent.marketdata.provider.FakeFinnhubClient;
+import jakarta.servlet.Filter;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -15,24 +17,48 @@ import java.util.Map;
 import java.util.stream.Collectors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Import;
 import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.json.JsonMapper;
 
-/// Drives `POST /mcp` with JSON-RPC messages, as the agent's MCP client sends them.
+/// Drives `POST /mcp` through the security filters with JSON-RPC messages, as the agent's MCP
+/// client sends them. `tools/list` and `tools/call` carry a test JWT with `marketdata.read`, signed
+/// for [TestJwts#ISSUER].
 @SpringBootTest(properties = "FINNHUB_API_KEY=synthetic-finnhub-key")
 @Import(McpControllerTest.FakeFinnhubConfig.class)
+@ExtendWith(OutputCaptureExtension.class)
 class McpControllerTest {
+
+  @DynamicPropertySource
+  static void trustTheTestIssuer(DynamicPropertyRegistry propertyRegistry) {
+    TestJwts.registerResourceServerProperties(propertyRegistry);
+  }
+
+  private static final String TEST_USER_SUB = "user_market_data_test";
+  private static final String MARKET_DATA_TOKEN = TestJwts.token(TEST_USER_SUB, "marketdata.read");
+  private static final String TOOLS_LIST =
+      "{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}";
+  private static final String GET_QUOTE_CALL =
+      """
+      {"jsonrpc":"2.0","id":3,"method":"tools/call",\
+      "params":{"name":"getQuote","arguments":{"symbol":"AAPL"}}}""";
 
   @TestConfiguration
   static class FakeFinnhubConfig {
@@ -53,17 +79,35 @@ class McpControllerTest {
   @Autowired private FakeFinnhubClient fakeFinnhubClient;
   @Autowired private JsonMapper jsonMapper;
 
+  @Autowired
+  @Qualifier("springSecurityFilterChain")
+  private Filter springSecurityFilterChain;
+
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUpMockMvc() {
-    mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+    mockMvc =
+        MockMvcBuilders.webAppContextSetup(webApplicationContext)
+            .addFilters(springSecurityFilterChain)
+            .build();
+  }
+
+  private static MockHttpServletRequestBuilder jsonRpc(String jsonRpcMessage) {
+    return post("/mcp").contentType(MediaType.APPLICATION_JSON).content(jsonRpcMessage);
+  }
+
+  private static MockHttpServletRequestBuilder jsonRpcAs(
+      String jsonRpcMessage, String bearerToken) {
+    return jsonRpc(jsonRpcMessage).header("Authorization", "Bearer " + bearerToken);
   }
 
   private MvcResult postJsonRpc(String jsonRpcMessage) throws Exception {
-    return mockMvc
-        .perform(post("/mcp").contentType(MediaType.APPLICATION_JSON).content(jsonRpcMessage))
-        .andReturn();
+    return mockMvc.perform(jsonRpcAs(jsonRpcMessage, MARKET_DATA_TOKEN)).andReturn();
+  }
+
+  private int statusOf(MockHttpServletRequestBuilder mcpRequest) throws Exception {
+    return mockMvc.perform(mcpRequest).andReturn().getResponse().getStatus();
   }
 
   private JsonNode postForReply(String jsonRpcMessage) throws Exception {
@@ -117,7 +161,7 @@ class McpControllerTest {
 
   @Test
   void toolsListListsAllSixToolsWithTheirParameters() throws Exception {
-    JsonNode reply = postForReply("{\"jsonrpc\":\"2.0\",\"id\":2,\"method\":\"tools/list\"}");
+    JsonNode reply = postForReply(TOOLS_LIST);
 
     Map<String, JsonNode> inputSchemaByToolName =
         reply
@@ -397,13 +441,77 @@ class McpControllerTest {
         .perform(
             post("/mcp")
                 .contentType(MediaType.APPLICATION_JSON)
-                .content("{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"tools/list\"}"))
+                .content("{\"jsonrpc\":\"2.0\",\"id\":\"abc\",\"method\":\"tools/list\"}")
+                .header("Authorization", "Bearer " + MARKET_DATA_TOKEN))
         .andExpect(status().isAccepted())
         .andExpect(content().string(""));
   }
 
   @Test
   void getIsNotAllowed() throws Exception {
-    mockMvc.perform(get("/mcp")).andExpect(status().isMethodNotAllowed());
+    mockMvc
+        .perform(get("/mcp").header("Authorization", "Bearer " + MARKET_DATA_TOKEN))
+        .andExpect(status().isMethodNotAllowed());
+  }
+
+  @Test
+  void toolCallsWithoutAValidTokenAreRejectedWith401() throws Exception {
+    assertThat(statusOf(jsonRpc(GET_QUOTE_CALL))).isEqualTo(401);
+    assertThat(statusOf(jsonRpc(TOOLS_LIST))).isEqualTo(401);
+    assertThat(
+            statusOf(
+                jsonRpcAs(GET_QUOTE_CALL, TestJwts.expiredToken(TEST_USER_SUB, "marketdata.read"))))
+        .isEqualTo(401);
+    assertThat(
+            statusOf(
+                jsonRpcAs(
+                    GET_QUOTE_CALL,
+                    TestJwts.tokenFromIssuer(
+                        "https://evil.test.invalid", TEST_USER_SUB, "marketdata.read"))))
+        .isEqualTo(401);
+  }
+
+  @Test
+  void toolCallsWithoutMarketDataReadAreRejectedWith403() throws Exception {
+    String otherScopesToken =
+        TestJwts.token(TEST_USER_SUB, "agent.chat", "filings.read", "portfolio.read");
+
+    assertThat(statusOf(jsonRpcAs(GET_QUOTE_CALL, otherScopesToken))).isEqualTo(403);
+    assertThat(statusOf(jsonRpcAs(TOOLS_LIST, otherScopesToken))).isEqualTo(403);
+  }
+
+  @Test
+  void initializeAndPingNeedNoTokenBecauseTheAgentAppSendsThemOutsideAChatRequest()
+      throws Exception {
+    assertThat(
+            statusOf(
+                jsonRpc(
+                    """
+                    {"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":\
+                    "2025-11-25","capabilities":{},"clientInfo":{"name":"test","version":"1"}}}""")))
+        .isEqualTo(200);
+    assertThat(statusOf(jsonRpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"ping\"}")))
+        .isEqualTo(200);
+  }
+
+  @Test
+  void invalidTokenIsRejectedWith401EvenOnPing() throws Exception {
+    assertThat(
+            statusOf(
+                jsonRpc("{\"jsonrpc\":\"2.0\",\"id\":4,\"method\":\"ping\"}")
+                    .header(
+                        "Authorization",
+                        "Bearer " + TestJwts.expiredToken(TEST_USER_SUB, "marketdata.read"))))
+        .isEqualTo(401);
+  }
+
+  @Test
+  void toolCallLogsNeitherTheTokenNorItsSubject(CapturedOutput capturedOutput) throws Exception {
+    successText(callGetQuote("AAPL"));
+
+    assertThat(capturedOutput.getOut())
+        .contains("toolCallCompleted")
+        .doesNotContain(MARKET_DATA_TOKEN)
+        .doesNotContain(TEST_USER_SUB);
   }
 }

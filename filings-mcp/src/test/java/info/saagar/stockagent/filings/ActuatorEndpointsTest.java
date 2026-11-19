@@ -3,17 +3,23 @@ package info.saagar.stockagent.filings;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 
+import info.saagar.stockagent.common.testing.TestJwts;
+import jakarta.servlet.Filter;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 import org.springframework.web.context.WebApplicationContext;
 
 /// The Docker Compose healthcheck needs `/actuator/health`; no other actuator endpoint may be
-/// exposed, because `/actuator/env` would reveal the SEC User-Agent.
+/// exposed, because `/actuator/env` would reveal the SEC User-Agent. Runs through the security
+/// filters, because the healthcheck sends no token.
 @SpringBootTest(
     properties = {
       "SEC_USER_AGENT=synthetic-agent test@example.com",
@@ -22,17 +28,29 @@ import org.springframework.web.context.WebApplicationContext;
     })
 class ActuatorEndpointsTest {
 
+  @DynamicPropertySource
+  static void trustTheTestIssuer(DynamicPropertyRegistry propertyRegistry) {
+    TestJwts.registerResourceServerProperties(propertyRegistry);
+  }
+
   @Autowired private WebApplicationContext webApplicationContext;
+
+  @Autowired
+  @Qualifier("springSecurityFilterChain")
+  private Filter springSecurityFilterChain;
 
   private MockMvc mockMvc;
 
   @BeforeEach
   void setUpMockMvc() {
-    mockMvc = MockMvcBuilders.webAppContextSetup(webApplicationContext).build();
+    mockMvc =
+        MockMvcBuilders.webAppContextSetup(webApplicationContext)
+            .addFilters(springSecurityFilterChain)
+            .build();
   }
 
   @Test
-  void healthReportsUp() throws Exception {
+  void healthReportsUpWithoutAToken() throws Exception {
     MvcResult healthResult = mockMvc.perform(get("/actuator/health")).andReturn();
 
     assertThat(healthResult.getResponse().getStatus()).isEqualTo(200);
@@ -41,7 +59,14 @@ class ActuatorEndpointsTest {
 
   @Test
   void envEndpointIsNotExposed() throws Exception {
-    MvcResult envResult = mockMvc.perform(get("/actuator/env")).andReturn();
+    MvcResult envResult =
+        mockMvc
+            .perform(
+                get("/actuator/env")
+                    .header(
+                        "Authorization",
+                        "Bearer " + TestJwts.token("user_actuator_test", "filings.read")))
+            .andReturn();
 
     assertThat(envResult.getResponse().getStatus()).isEqualTo(404);
   }
