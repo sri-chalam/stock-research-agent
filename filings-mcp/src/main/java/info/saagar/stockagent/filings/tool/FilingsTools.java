@@ -159,7 +159,7 @@ public class FilingsTools {
   /// @throws IllegalStateException when embedding the query or searching the store fails
   @Tool(
       "Search the narrative sections (such as Item 1A Risk Factors) of a US company's recent"
-          + " 10-K and 10-Q filings and return the most relevant text chunks. Each chunk has its"
+          + " 10-K filings and return the most relevant text chunks. Each chunk has its"
           + " text, form, fiscalPeriod (end of the period the filing covers), section,"
           + " accessionNumber, a sec.gov url, and a similarity score from 0 to 1, so it can be"
           + " cited. Use it for questions about what a filing says, such as risks. Only a fixed"

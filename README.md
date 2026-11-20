@@ -10,31 +10,21 @@ Requirements: [docs/requirements/stock-research-agent-spec.md](docs/requirements
 
 This is a learning project. It explores how to build a production-style AI agent application in Java with [LangChain4j](https://docs.langchain4j.dev/). Spring AI is not used.
 
-> **Work in progress.** Most of the goals below are not implemented yet. The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 5c. Some goals may change or be dropped.
+Built in iterations; remaining work and status are in [Detailed status](#detailed-status).
 
-Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
+AI topics explored:
 
-| # | Area | What to explore | Status |
-|---|---|---|---|
-| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | 🚧 Supervisor over the Market data agent, Filings analyst and Portfolio agent |
-| 2 | Tool calling | The model picks tools and their arguments | ✅ |
-| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`); `portfolio-mcp` (`getHoldings`, `getWatchlist`) |
-| 4 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
-| 5 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Vector search over 10-K Risk Factors (`searchFilings`) |
-| 6 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ✅ |
-| 7 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ✅ |
-| 8 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
-| 9 | Guardrails | Prompt-injection and advice-request refusal, a message length limit, news and filing text treated as untrusted input, and a "Not investment advice" disclaimer with only known source links | 🚧 Input guardrail (injection and advice-request refusal) and message length limit |
-| 10 | Human-in-the-loop | Paper trades run only after the user approves them | ⏳ |
-| 11 | Structured output | Reports and briefs returned as typed Java records | 🚧 Prompt classifier returns a typed record (`Classification`) |
-| 12 | Resilience | Retry per LLM step, circuit breaker and fallback model | ⏳ |
-| 13 | Scheduled jobs | Morning brief run by a scheduled job with a machine-to-machine token and the Anthropic Batch API | ⏳ |
-| 14 | Cost control | Prompt caching, token and cost per agent, Haiku vs Sonnet chosen per agent | 🚧 Model per agent (Haiku vs Sonnet compared), tokens per agent |
-| 15 | Chat GUI | One `index.html` with WorkOS sign-in, a prompt box, the answer (not streamed) and an agent/tool trace panel | ✅ |
-| 16 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
-| 17 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Structured logs, Loki/Grafana log search |
-| 18 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
-| 19 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
+1. **Agents and orchestration:** a Supervisor routes to three specialist agents (`langchain4j-agentic`), each with its own model, prompt version and step limit.
+2. **MCP and tool calling:** three Java MCP servers (Streamable HTTP, stateless), consumed through the LangChain4j MCP client, with a tool allowlist per agent.
+3. **RAG over SEC filings:** pgvector, an in-process embedding model and cited chunks. Hybrid search and reranking are in progress.
+4. **Semantic cache:** answers cached by meaning, matched on the exact ticker set. Real-time and portfolio answers are never stored.
+5. **Prompt classifier:** one LLM call labels each question `REAL_TIME` or `CACHEABLE` and extracts its tickers.
+6. **Guardrails:** refusal of prompt injection and advice requests, tool output treated as untrusted, and an output guardrail that adds a disclaimer and filters links.
+7. **Structured output:** typed, validated Java records from the LLM.
+8. **Security:** OAuth 2.1 with WorkOS. The user token is forwarded to the MCP servers, and each user sees only their own data.
+9. **Observability:** structured JSON logs, correlation IDs across services, Loki/Grafana log search, and an `answerProvenance` line showing which agents and tools produced each answer.
+10. **Chat GUI:** one `index.html` with WorkOS sign-in and an agent/tool trace panel.
+11. **Cost and model choice:** a model per agent, a Haiku vs Sonnet comparison and tokens per agent.
 
 Later, the goal is to use software factories: automated pipelines in which agents make low-complexity changes to this repo on their own. See [Future plans](#future-plans).
 
@@ -520,6 +510,32 @@ curl -i -X POST http://127.0.0.1:8084/mcp -H 'Content-Type: application/json' \
 - Tests use a scripted fake `ChatModel` and fake Finnhub and EDGAR clients; no live model, Finnhub or EDGAR call.
 
 See section 14 of the spec for the full build plan.
+
+## Detailed status
+
+The work follows the requirements one iteration at a time (see the build plan in [spec §14](docs/requirements/stock-research-agent-spec.md#14-iterative-build-plan)). The current iteration is 5c. Some goals may change or be dropped.
+
+Status: ✅ done · 🚧 in progress · ⏳ planned · ❓ stretch goal, may not be built
+
+| # | Area | What to explore | Status |
+|---|---|---|---|
+| 1 | Agents | One agent with `AiServices`, then multi-agent orchestration (Supervisor, specialist agents) with `langchain4j-agentic` | ✅ Supervisor over the Market data agent, Filings analyst and Portfolio agent |
+| 2 | Tool calling | The model picks tools and their arguments | ✅ |
+| 3 | MCP clients and servers | Own Java MCP servers (Streamable HTTP, stateless) for market data (Finnhub) and SEC filings (EDGAR). Agents call them through the LangChain4j MCP client, with a tool allowlist per agent | ✅ `market-data-mcp` (6 tools); `filings-mcp` (`listFilings`, `getCompanyFacts`, `searchFilings`); `portfolio-mcp` (`getHoldings`, `getWatchlist`) |
+| 4 | Semantic caching | Cache answers by meaning, matched on the exact ticker set, with one fixed TTL. Real-time questions and answers that used a user's portfolio are never stored | ✅ |
+| 5 | Security | OAuth 2.1 with WorkOS AuthKit (PKCE). The agent app and every MCP server validate tokens, and users can access only their own data | ✅ |
+| 6 | Chat GUI | One `index.html` with WorkOS sign-in, a prompt box, the answer (not streamed) and an agent/tool trace panel | ✅ |
+| 7 | Prompt classifier | Label each question `REAL_TIME` or `CACHEABLE` and extract its tickers, so the semantic cache knows what it may serve or store. Routing quotes past the agents is a later stretch goal | ✅ |
+| 8 | Guardrails | Prompt-injection and advice-request refusal, a message length limit, news and filing text treated as untrusted input, and a "Not investment advice" disclaimer with only known source links | ✅ |
+| 9 | Structured output | LLM output returned as a typed, validated Java record (the prompt classifier's `Classification`) | ✅ |
+| 10 | RAG | SEC filings in pgvector: hybrid search (vector + keyword), reranking and section citations | 🚧 Done: vector search over 10-K Risk Factors (`searchFilings`). Left: hybrid search, reranking |
+| 11 | MCP and LLM gateway | Bifrost in front of the MCP servers and the Anthropic API, with one virtual key per agent that sets its tool allowlist and budget | ⏳ |
+| 12 | Memory | Short-term conversation memory and long-term memory per user | ⏳ |
+| 13 | Deployment | AWS ECS on Fargate Spot, defined with AWS CDK and deployed by GitHub Actions (OIDC). The stack is created and destroyed on demand | ⏳ |
+| 14 | Human-in-the-loop | Paper trades run only after the user approves them | ⏳ |
+| 15 | Cost control | Prompt caching, tokens per agent, Haiku vs Sonnet chosen per agent | 🚧 Done: model per agent (Haiku vs Sonnet compared), tokens per agent. Left: prompt caching |
+| 16 | Observability | Structured JSON logs with correlation IDs across apps, OpenTelemetry traces and Grafana dashboards | 🚧 Done: structured logs, Loki/Grafana log search. Left: OpenTelemetry traces, Grafana dashboards |
+| 17 | Evals | Golden question set, LLM-as-judge grading and CI that blocks merges below a score threshold | ❓ |
 
 ## Future plans
 

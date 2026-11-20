@@ -18,7 +18,7 @@ Open: who may sign up ([OD-1](open-decisions.md)) and when the app creates the u
 ## Watchlist update
 
 1. The user edits the watchlist in the page.
-2. The page calls `PUT /api/watchlist` (§8.11).
+2. The page calls `PUT /api/watchlist` (§8.8).
 3. The tickers are stored in Postgres for that user only.
 4. Agents read the list through `getWatchlist()` on `portfolio-mcp`. They cannot change it.
 
@@ -44,10 +44,3 @@ See the request-flow diagram in spec §5.2. In short: classify, check the semant
 5. If the user does nothing for the configured time (default 15 minutes), the action becomes `EXPIRED` and cannot be approved (FR-23).
 
 Open: how starting holdings get in ([OD-3](open-decisions.md)).
-
-## Morning brief
-
-1. On weekdays before market open, a scheduled job generates a brief for each user's holdings: overnight news, notable price moves, upcoming earnings and new filings (FR-26). It authenticates with a WorkOS M2M token (FR-27).
-2. The brief is stored. Each step is idempotent, so a failed run can be retried without duplicates (FR-29).
-3. When the user signs in, the page fetches `GET /api/briefs/latest` and shows it in the "Latest morning brief" section (UI-3).
-4. The spec has no push channel such as email or a notification. The user sees the brief only once they open the app.
