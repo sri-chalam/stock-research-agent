@@ -18,7 +18,7 @@
 
 ## 1. Project Overview
 
-Equity Research & Portfolio Watch: a multi-agent AI assistant for individual investors, built in Java with Spring Boot, LangChain4j and MCP tool servers. It answers research questions (market data, news, SEC filings via RAG), analyzes paper-portfolio risk, produces a scheduled morning brief, and proposes paper trades that require explicit user approval. It is a research and monitoring tool only: no real trading, no personalized investment advice.
+Equity Research & Portfolio Watch: a multi-agent AI assistant for individual investors, built in Java with Spring Boot, LangChain4j and MCP tool servers. It answers research questions (market data, news, SEC filings via RAG), reads the user's paper portfolio and watchlist, and proposes paper trades that require explicit user approval. It is a research and monitoring tool only: no real trading, no personalized investment advice.
 
 **Project intent:** This project exists to explore agentic-application concepts (agents, MCP, gateways, RAG, evals, auth). Keep data-provider integrations (Finnhub, SEC EDGAR) as thin as possible: fixed, small tool outputs over flexible parameters, and no provider edge cases unless an eval demands it. When a design choice adds provider complexity without teaching an agentic concept, pick the simpler option.
 
