@@ -12,6 +12,7 @@ import dev.langchain4j.service.tool.ToolExecution;
 import dev.langchain4j.service.tool.ToolExecutionResult;
 import info.saagar.stockagent.classifier.ClassifiedPrompt;
 import info.saagar.stockagent.classifier.FreshnessClass;
+import info.saagar.stockagent.classifier.InputGuardrailVerdict;
 import info.saagar.stockagent.config.FilingsAgentConfig;
 import info.saagar.stockagent.config.PortfolioAgentConfig;
 import info.saagar.stockagent.config.PromptClassifierConfig;
@@ -77,7 +78,8 @@ class SemanticCacheTest {
   }
 
   private static ClassifiedPrompt cacheable(String... tickers) {
-    return new ClassifiedPrompt(FreshnessClass.CACHEABLE, List.of(tickers), null);
+    return new ClassifiedPrompt(
+        FreshnessClass.CACHEABLE, List.of(tickers), InputGuardrailVerdict.PASSED, null);
   }
 
   /// A run in which the Filings analyst called `listFilings` once.
@@ -225,7 +227,8 @@ class SemanticCacheTest {
   void realTimePromptSkipsTheLookupAndIsNeverStored() {
     SemanticCache semanticCache = semanticCache(true);
     ClassifiedPrompt realTimePrompt =
-        new ClassifiedPrompt(FreshnessClass.REAL_TIME, List.of("AAPL"), null);
+        new ClassifiedPrompt(
+            FreshnessClass.REAL_TIME, List.of("AAPL"), InputGuardrailVerdict.PASSED, null);
 
     CacheLookup firstLookup =
         askAndStore(semanticCache, "Price of Apple", realTimePrompt, "$189.42", filingsRun());

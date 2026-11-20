@@ -1,0 +1,34 @@
+meta {
+  name: Market Data Agent Get Market News
+  type: http
+  seq: 7
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+}
+
+body:json {
+  {
+    "message":"Get Nvidia Company News. Stock symbol NVDA"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}

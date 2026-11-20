@@ -65,8 +65,9 @@ Package by layer under `info.saagar.stockagent`:
 | `agent` | `AiServices` agent interfaces with `@SystemMessage` (e.g. `MarketDataAgent`, `PortfolioAgent`) |
 | `classifier` | The prompt classifier, which is not an agent: its AI service (`ClassifierAiService`), output records (`Classification`, `FreshnessClass`, `ClassifiedPrompt`) and `PromptClassifier`, which validates tickers and falls back to `REAL_TIME` |
 | `cache` | The semantic cache, which is not an agent: `SemanticCache` (hit, miss and store rules), `SemanticCacheStore` with `JdbcSemanticCacheStore` (own `sem_cache` table, created by `sem-cache-schema.sql`) and `InMemorySemanticCacheStore` (tests), and its records (`CacheLookup`, `CacheCandidate`, `CacheEntry`) |
-| `tool` | Tool-call helpers (`ToolArguments`, `McpUserHeaders`: forwards the chat user's `X-User-Id` on MCP calls to `portfolio-mcp` only). agent-app has no `@Tool` classes: tools come from MCP servers |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`) |
+| `guardrail` | `ResearchAnswerGuardrail`: the Supervisor's `OutputGuardrail` (removes links other than sec.gov and Finnhub news, adds "Not investment advice." once), applied through the supervisor builder's `output` function in `SupervisorAgentConfig` |
+| `tool` | Tool-call helpers (`ToolArguments`, `McpAuthorizationHeaders`: forwards the chat user's bearer token, with the correlation headers, on every MCP call). agent-app has no `@Tool` classes: tools come from MCP servers |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`; `SecurityConfig`: OAuth2 resource server, `/api/**` needs `agent.chat`) |
 | `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `RunProvenance`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
@@ -75,10 +76,10 @@ Under `info.saagar.stockagent.marketdata` (application class `MarketDataMcpAppli
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: the `POST /mcp` Streamable HTTP transport around the LangChain4j `McpServer` |
+| `controller` | `McpController`: the `POST /mcp` Streamable HTTP transport around the LangChain4j `McpServer`; requires a bearer token with `marketdata.read` for `tools/list` and `tools/call` |
 | `tool` | LangChain4j `@Tool` classes served over MCP and their helpers (`MarketDataTools`, `TickerSymbols`) |
 | `provider` | Finnhub client interface, implementation and result records (`FinnhubClient`, `RestClientFinnhubClient`, `Quote`, `MarketDataException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FinnhubProperties`, `MarketDataConfig`; `SecurityConfig`: OAuth2 resource server) |
 
 ### `filings-mcp`
 
@@ -86,10 +87,10 @@ Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) |
+| `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) that requires `filings.read` instead of `marketdata.read` |
 | `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`, `FilingChunk`) |
 | `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store; `SecurityConfig`: OAuth2 resource server) |
 | `rag` | Filings RAG ingestion: startup ingestion on a virtual thread, section extraction and chunk metadata keys (`FilingIngestion`, `FilingSections`, `FilingChunkMetadata`) |
 
 ### `portfolio-mcp`
@@ -98,10 +99,10 @@ Under `info.saagar.stockagent.portfolio` (application class `PortfolioMcpApplica
 
 | Package | Contents |
 |---|---|
-| `controller` | `McpController`: a copy of the `filings-mcp` controller (ADR 0010) that binds the `X-User-Id` header for each `tools/call` |
+| `controller` | `McpController`: a copy of the `filings-mcp` controller (ADR 0010) that requires a bearer token with `portfolio.read` for `tools/list` and `tools/call`, and binds the token's `sub` for each `tools/call` |
 | `tool` | `PortfolioTools` (`getHoldings`, `getWatchlist`) and `PortfolioUser` (the request's user ID as a `ScopedValue`) |
-| `repository` | `PortfolioRepository`, `JdbcPortfolioRepository` (`JdbcClient` over tables created and seeded by `schema.sql` and `data.sql`), `Holding` |
-| `config` | `PortfolioConfig`: repository and `McpServer` wiring |
+| `repository` | `PortfolioRepository`, `JdbcPortfolioRepository` (`JdbcClient` over tables created by `schema.sql`), `DemoPortfolioSeeder` (seeds the demo users' `sub` values from env vars), `Holding` |
+| `config` | `PortfolioConfig`: repository, seeder and `McpServer` wiring; `SecurityConfig`: OAuth2 resource server |
 
 ### `common`
 
@@ -111,6 +112,7 @@ Under `info.saagar.stockagent.common`, organised by package:
 |---|---|
 | `common.logging` | Request-context and structured-logging support (`LoggingContextFilter`; `StockAgentLogFormatter` when written) |
 | `common.web` | Web-layer support shared by the apps (`GlobalExceptionHandler`) |
+| `common.testing` (test fixtures, `src/testFixtures`) | `TestJwts`: signs WorkOS-shaped test JWTs and serves their JWK set on loopback for the resource-server tests; apps use it through `testImplementation(testFixtures(project(":common")))` |
 
 `LogEventNamesTest` runs in each app and scans that app's `src/main/java` plus `common/src/main/java`, so `eventName` values are unique per app.
 
@@ -125,6 +127,18 @@ Under `info.saagar.stockagent.common`, organised by package:
 ./gradlew :filings-mcp:bootRun      # start the filings MCP server (127.0.0.1:8082)
 ./gradlew :portfolio-mcp:bootRun    # start the portfolio MCP server (127.0.0.1:8084)
 ```
+
+### Run with Docker Compose
+
+```bash
+docker compose up -d --build                          # build all images and start the full stack
+docker compose up -d --build --no-deps agent-app      # rebuild and restart one app (others keep running)
+docker compose build agent-app                        # build one image without starting it
+docker compose logs -f agent-app                      # follow one app's logs
+docker compose down                                   # stop and remove the stack
+```
+
+Service names: `agent-app`, `market-data-mcp`, `filings-mcp`, `portfolio-mcp`.
 
 ## 5. Code Style
 

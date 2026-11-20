@@ -3,6 +3,18 @@ spring:
     name: agent-app
   config:
     import: classpath:common.yml
+  # OAuth2 resource server (SEC-2): standard properties only. WorkOS access tokens have no aud claim,
+  # so no audience is checked; SecurityConfig requires the agent.chat permission on /api/**.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Copied exactly from a real token's iss: https://api.workos.com/user_management/<client_id>
+          issuer-uri: ${WORKOS_ISSUER_URI}
+          # Set explicitly, so startup needs no OIDC discovery call to the issuer.
+          jwk-set-uri: ${WORKOS_JWK_SET_URI}
+          # WorkOS puts permissions in a "permissions" array; each becomes a SCOPE_<permission> authority.
+          authorities-claim-name: permissions
 
 server:
   port: 8080
@@ -11,6 +23,11 @@ server:
 # Model IDs are configured per agent here, never hard-coded. The API key comes from the
 # ANTHROPIC_API_KEY environment variable.
 stock-agent:
+  # The chat page at / (static/index.html) reads these through GET /ui-config, without a token.
+  ui:
+    # WorkOS dashboard → Applications → your app → Client ID (client_...). Public, not a secret.
+    # Empty: the page shows a setup error instead of the sign-in button.
+    workos-client-id: ${WORKOS_CLIENT_ID:}
   agents:
     # Plans each request, delegates sub-questions to the specialist agents below and merges their
     # answers. max-steps caps the specialist invocations per request. The planner writes the final
@@ -44,7 +61,7 @@ stock-agent:
         - listFilings
         - getCompanyFacts
         - searchFilings
-    # Reads the user's holdings and watchlist. The user comes from X-User-Id on the MCP call.
+    # Reads the user's holdings and watchlist. The user comes from the forwarded token's sub.
     portfolio:
       model: claude-haiku-5-5
       max-tokens: 1024
@@ -54,11 +71,12 @@ stock-agent:
         - getHoldings
         - getWatchlist
   # The prompt classifier: one LLM call per /api/chat prompt, before the Supervisor, returning the
-  # prompt's freshness class (REAL_TIME or CACHEABLE) and tickers. Not an agent: no tools, no memory.
+  # prompt's freshness class (REAL_TIME or CACHEABLE), tickers and the input guardrail flags
+  # (injectionSuspected, adviceRequest). Not an agent: no tools, no memory.
   # The prompt is read from prompts/<prompt-id>.txt.
   classifier:
     model: claude-haiku-5-5
-    prompt-id: classifier-v1
+    prompt-id: classifier-v2
     max-tokens: 256
     timeout: 10s
   # Answers CACHEABLE prompts from earlier answers to similar questions with the same ticker set.
@@ -91,7 +109,6 @@ stock-agent:
       url: ${FILINGS_MCP_URL:http://localhost:8082/mcp}
       protocol-version: 2025-11-25
       tool-execution-timeout: 10s
-    # The only server that receives the chat user's X-User-Id.
     portfolio:
       url: ${PORTFOLIO_MCP_URL:http://localhost:8084/mcp}
       protocol-version: 2025-11-25

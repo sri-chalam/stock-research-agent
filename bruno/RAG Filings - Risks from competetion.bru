@@ -1,0 +1,34 @@
+meta {
+  name: RAG Filings - Risks from competetion
+  type: http
+  seq: 15
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+}
+
+body:json {
+  {
+    "message": "What does Apple's latest 10-K say about risks from competition?"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}

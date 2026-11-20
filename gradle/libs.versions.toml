@@ -20,6 +20,11 @@ h2 = { module = "com.h2database:h2" }
 # agent-app's semantic cache: JdbcClient over its own Hikari pool, without Boot's DataSource
 # auto-configuration; version managed by the Spring Boot BOM.
 spring-jdbc = { module = "org.springframework:spring-jdbc" }
+# Iteration 5: agent-app and the MCP servers are OAuth2 resource servers (WorkOS tokens). The starter
+# also brings Nimbus JOSE, which common's TestJwts uses to sign test tokens. Versions managed by the
+# Spring Boot BOM.
+spring-boot-starter-oauth2-resource-server = { module = "org.springframework.boot:spring-boot-starter-security-oauth2-resource-server" }
+spring-test = { module = "org.springframework:spring-test" }
 
 langchain4j-bom = { module = "dev.langchain4j:langchain4j-bom", version.ref = "langchain4j" }
 langchain4j = { module = "dev.langchain4j:langchain4j" }

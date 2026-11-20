@@ -1,0 +1,623 @@
+<!doctype html>
+<html lang="en" data-theme="light">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Equity Research</title>
+  <meta name="description" content="Ask research questions and see which agents and tools produced each answer.">
+  <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%238E4F86' stroke-width='2.4' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpath d='M3 17l6-6 4 4 8-8'/%3E%3Cpath d='M15 7h6v6'/%3E%3C/svg%3E">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2.1.1/css/pico.min.css">
+  <style>
+    /* Blush palette, light mode only. Pico reads these variables; the rest of this sheet uses them too. */
+    :root[data-theme="light"] {
+      --page: #FBF7F9;
+      --surface: #FFFFFF;
+      --border: #EFE3EA;
+      --border-strong: #E6D6E0;
+      --text: #3A2E39;
+      --text-muted: #6B5A68;
+      --text-subtle: #7D6B79;
+      --blush: #F6E9F2;
+      --blush-text: #6F3A68;
+      --mauve: #EBD5E6;
+      --mauve-hover: #E2C4DB;
+      --mauve-text: #4A2C47;
+      --plum: #8E4F86;
+      --plum-hover: #6F3A68;
+      --code-bg: #FCFAFB;
+      --gain: #2F7356;
+      --gain-bg: #EAF5EF;
+      --drop: #A8404F;
+      --drop-bg: #FBECEE;
+      --error-border: #F1CDD3;
+      --error-title: #8A2F3D;
+      --error-text: #6E2632;
+      --shadow: 0 4px 20px rgba(142, 79, 134, 0.05);
+
+      --pico-font-family: Inter, system-ui, -apple-system, "Segoe UI", sans-serif;
+      --pico-font-family-monospace: "JetBrains Mono", ui-monospace, SFMono-Regular, monospace;
+      --pico-font-size: 100%;
+      --pico-background-color: var(--page);
+      --pico-color: var(--text);
+      --pico-muted-color: var(--text-muted);
+      --pico-h1-color: var(--text);
+      --pico-h2-color: var(--text);
+      --pico-primary: var(--plum);
+      --pico-primary-hover: var(--plum-hover);
+      --pico-primary-underline: rgba(142, 79, 134, 0.5);
+      --pico-primary-background: var(--mauve);
+      --pico-primary-hover-background: var(--mauve-hover);
+      --pico-primary-border: var(--mauve);
+      --pico-primary-hover-border: var(--mauve-hover);
+      --pico-primary-inverse: var(--mauve-text);
+      --pico-primary-focus: rgba(142, 79, 134, 0.28);
+      --pico-border-radius: 12px;
+      --pico-form-element-background-color: var(--surface);
+      --pico-form-element-border-color: var(--border-strong);
+      --pico-form-element-focus-color: var(--plum);
+      --pico-code-background-color: var(--code-bg);
+      --pico-code-color: var(--mauve-text);
+    }
+
+    body { background: var(--page); color: var(--text); min-height: 100vh; display: flex; flex-direction: column; }
+    h1, h2, p, ol, ul, li { margin: 0; }
+    /* Pico gives button[type=submit] width: 100% and [type=button]/[type=submit] a bottom margin;
+       button[type] matches that specificity and comes later, so buttons size to their content. */
+    button, button[type] { margin: 0; width: auto; }
+
+    /* Header */
+    body > header.topbar {
+      display: flex; align-items: center; justify-content: space-between; gap: 16px;
+      padding: 14px 32px; background: var(--surface); border-bottom: 1px solid #F0E4EB;
+    }
+    .brand { display: flex; align-items: center; gap: 10px; font-weight: 650; font-size: 16px; letter-spacing: -0.01em; }
+    .logo { width: 32px; height: 32px; border-radius: 10px; background: var(--blush); display: flex; align-items: center; justify-content: center; flex-shrink: 0; }
+    .account { display: flex; align-items: center; gap: 12px; min-width: 0; }
+    .user { display: flex; align-items: center; gap: 8px; font-size: 14px; color: var(--mauve-text); min-width: 0; }
+    .user-email { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--blush); color: var(--blush-text); display: flex; align-items: center; justify-content: center; font-size: 13px; font-weight: 600; flex-shrink: 0; }
+    .ghost-button {
+      height: 36px; padding: 0 14px; border: 1px solid var(--border-strong); border-radius: 999px;
+      background: var(--surface); color: var(--mauve-text); font-size: 14px; font-weight: 500;
+      display: inline-flex; align-items: center; gap: 6px; flex-shrink: 0;
+    }
+    .ghost-button:hover { background: var(--blush); border-color: var(--border-strong); color: var(--mauve-text); }
+
+    .soft-button {
+      border: 0; border-radius: 999px; background: var(--mauve); color: var(--mauve-text);
+      font-weight: 600; display: inline-flex; align-items: center; justify-content: center; gap: 8px;
+    }
+    .soft-button:hover { background: var(--mauve-hover); color: var(--mauve-text); }
+    .soft-button:disabled { opacity: 0.7; cursor: progress; }
+
+    /* Signed out */
+    .hero {
+      flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; box-sizing: border-box;
+      padding: 64px 24px; display: flex; flex-wrap: wrap; align-items: center; gap: 56px;
+    }
+    .hero-copy { flex: 1 1 420px; display: flex; flex-direction: column; gap: 24px; }
+    .eyebrow { align-self: flex-start; font-size: 13px; font-weight: 500; color: var(--blush-text); background: var(--blush); border-radius: 999px; padding: 5px 12px; }
+    .hero h1 { font-size: clamp(34px, 5vw, 48px); line-height: 1.1; font-weight: 650; letter-spacing: -0.03em; }
+    .hero-lead { font-size: 17px; line-height: 1.65; color: var(--text-muted); max-width: 480px; }
+    .hero-actions { display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+    .hero-actions .soft-button { height: 50px; padding: 0 24px; font-size: 16px; }
+    .fine-print { font-size: 14px; color: var(--text-subtle); }
+    .sign-in-error { font-size: 14px; line-height: 1.6; color: var(--error-text); background: var(--drop-bg); border: 1px solid var(--error-border); border-radius: 12px; padding: 10px 14px; max-width: 520px; }
+    .example {
+      flex: 1 1 360px; background: var(--surface); border: 1px solid var(--border); border-radius: 24px;
+      padding: 24px; box-shadow: 0 12px 40px rgba(142, 79, 134, 0.08); display: flex; flex-direction: column; gap: 16px;
+    }
+    .example-label { font-size: 12px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.08em; color: var(--text-subtle); }
+    .example-rows { display: flex; flex-direction: column; gap: 6px; font-size: 14px; line-height: 1.6; }
+    .example-rows span { display: flex; justify-content: space-between; }
+    .example-trace { border-top: 1px solid #F5EDF2; padding-top: 14px; display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+
+    /* Signed in */
+    .workspace {
+      flex: 1; width: 100%; max-width: 1120px; margin: 0 auto; box-sizing: border-box;
+      padding: 32px 24px; display: flex; flex-wrap: wrap; align-items: flex-start; gap: 24px;
+    }
+    .conversation { flex: 999 1 560px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .empty-state { padding: 72px 8px; text-align: center; display: flex; flex-direction: column; gap: 8px; }
+    .empty-state h1 { font-size: 28px; font-weight: 650; letter-spacing: -0.02em; }
+    .empty-state p { color: var(--text-muted); }
+    .question {
+      align-self: flex-end; max-width: 80%; background: var(--blush); border-radius: 18px 18px 4px 18px;
+      padding: 12px 16px; font-size: 15px; line-height: 1.5; white-space: pre-wrap; overflow-wrap: anywhere;
+    }
+    .card { background: var(--surface); border: 1px solid var(--border); border-radius: 20px; padding: 24px; box-shadow: var(--shadow); }
+    .answer { font-size: 15px; line-height: 1.75; white-space: pre-wrap; overflow-wrap: anywhere; }
+    .answer a { color: var(--plum); text-decoration: underline; text-underline-offset: 3px; }
+    .answer a:hover { color: var(--plum-hover); }
+    .gain, .drop { font-weight: 600; border-radius: 6px; padding: 0 5px; }
+    .gain { color: var(--gain); background: var(--gain-bg); }
+    .drop { color: var(--drop); background: var(--drop-bg); }
+
+    .thinking { display: flex; flex-direction: column; gap: 14px; }
+    .thinking-label { display: flex; align-items: center; gap: 10px; font-weight: 600; color: var(--mauve-text); }
+    .dots { display: inline-flex; gap: 4px; }
+    .dots span { width: 8px; height: 8px; border-radius: 50%; background: var(--plum); animation: pulse 1.2s ease-in-out infinite; }
+    .dots span:nth-child(2) { animation-delay: 0.2s; }
+    .dots span:nth-child(3) { animation-delay: 0.4s; }
+    .skeleton { display: flex; flex-direction: column; gap: 10px; }
+    .skeleton span { height: 12px; border-radius: 6px; background: var(--blush); }
+    .thinking-hint { font-size: 13px; color: var(--text-subtle); }
+    @keyframes pulse { 0%, 100% { opacity: 0.35; } 50% { opacity: 1; } }
+    @media (prefers-reduced-motion: reduce) { .dots span { animation: none; } }
+
+    .error { background: var(--drop-bg); border-color: var(--error-border); display: flex; gap: 14px; align-items: flex-start; }
+    .error svg { flex-shrink: 0; margin-top: 2px; }
+    .error-body { display: flex; flex-direction: column; gap: 6px; }
+    .error h2 { font-size: 16px; font-weight: 600; color: var(--error-title); }
+    .error p { font-size: 14px; line-height: 1.6; color: var(--error-text); }
+    .error .soft-button { align-self: flex-start; margin-top: 8px; height: 40px; padding: 0 18px; font-size: 14px; }
+
+    .side { flex: 1 1 300px; min-width: 0; display: flex; flex-direction: column; gap: 16px; }
+    .trace { padding: 20px; display: flex; flex-direction: column; gap: 16px; }
+
+    .examples { padding: 20px; display: flex; flex-direction: column; gap: 12px; }
+    .examples h2 { font-size: 14px; font-weight: 600; }
+    .example-prompts { padding: 0; list-style: none; display: flex; flex-direction: column; gap: 8px; }
+    .example-prompts li { margin: 0; list-style: none; }
+    .examples .example-prompt {
+      width: 100%; display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+      padding: 10px 12px; text-align: left; border: 1px solid var(--border); border-radius: 12px;
+      background: var(--code-bg); color: var(--text); font-size: 14px; font-weight: 400; line-height: 1.45;
+    }
+    .examples .example-prompt:hover { background: var(--blush); border-color: var(--border-strong); color: var(--text); }
+    .examples .example-prompt:disabled { opacity: 0.6; cursor: not-allowed; }
+    .example-kind { font-size: 11px; font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em; color: var(--blush-text); }
+    .examples-hint { font-size: 12px; color: var(--text-subtle); }
+    .trace-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+    .trace h2 { font-size: 14px; font-weight: 600; }
+    .badge { font-size: 12px; font-weight: 500; color: var(--text-muted); background: #F7F1F5; border-radius: 999px; padding: 3px 10px; display: inline-flex; align-items: center; gap: 5px; }
+    .badge.cached { color: var(--mauve-text); background: var(--mauve); font-weight: 600; }
+    .trace-steps { padding: 0; list-style: none; display: flex; flex-direction: column; }
+    .trace-steps li { display: flex; gap: 12px; margin: 0; list-style: none; }
+    .rail { display: flex; flex-direction: column; align-items: center; }
+    .step-number { width: 24px; height: 24px; border-radius: 50%; background: var(--blush); color: var(--blush-text); font-size: 12px; font-weight: 600; display: flex; align-items: center; justify-content: center; }
+    .rail-line { width: 2px; flex: 1; background: #F0E4EB; margin: 4px 0; }
+    .trace-steps li:last-child .rail-line { display: none; }
+    .step { display: flex; flex-direction: column; gap: 6px; padding-bottom: 16px; min-width: 0; }
+    .trace-steps li:last-child .step { padding-bottom: 0; }
+    .agent { font-size: 14px; font-weight: 600; }
+    .tools { display: flex; flex-wrap: wrap; gap: 6px; }
+    .tool, .agent-pill + code {
+      font-family: var(--pico-font-family-monospace); font-size: 12px; color: var(--mauve-text);
+      background: var(--code-bg); border: 1px solid var(--border); border-radius: 6px; padding: 2px 7px; overflow-wrap: anywhere;
+    }
+    .agent-pill { font-size: 12px; font-weight: 600; color: #5E3A59; background: var(--blush); border-radius: 999px; padding: 3px 10px; }
+    .trace-note { font-size: 14px; color: var(--text-muted); line-height: 1.5; }
+
+    /* Prompt bar */
+    .prompt-bar { position: sticky; bottom: 0; padding: 16px 24px 20px; background: var(--page); }
+    .prompt {
+      max-width: 1072px; margin: 0 auto; display: flex; gap: 10px; align-items: flex-end;
+      background: var(--surface); border: 1px solid var(--border-strong); border-radius: 26px;
+      padding: 6px 6px 6px 22px; box-shadow: 0 8px 28px rgba(142, 79, 134, 0.08);
+    }
+    .prompt:focus-within { border-color: var(--plum); box-shadow: 0 0 0 3px var(--pico-primary-focus); }
+    .prompt textarea {
+      flex: 1; min-width: 0; margin: 0; border: 0; background: transparent; box-shadow: none; resize: none;
+      font-size: 15px; color: var(--text); padding: 12px 0; min-height: 44px; max-height: 160px; line-height: 1.4;
+    }
+    .prompt textarea:focus { box-shadow: none; border: 0; }
+    .prompt .soft-button { height: 44px; padding: 0 20px; font-size: 15px; flex-shrink: 0; }
+    .prompt-hint { margin-top: 8px; font-size: 12px; color: var(--text-subtle); text-align: center; }
+    .visually-hidden { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+
+    .setup-error { max-width: 560px; margin: 64px auto; }
+
+    @media (max-width: 600px) {
+      body > header.topbar { padding: 12px 16px; }
+      .brand-name { display: none; }
+      .ghost-button .label { display: none; }
+      .ghost-button { width: 44px; height: 44px; padding: 0; justify-content: center; }
+      .hero, .workspace { padding: 28px 16px; }
+      .prompt-bar { padding: 12px 12px 16px; }
+      .prompt .soft-button .label { display: none; }
+      .prompt .soft-button { width: 44px; padding: 0; }
+      .question { max-width: 90%; }
+      .card { padding: 18px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo"><svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="#8E4F86" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17l6-6 4 4 8-8"/><path d="M15 7h6v6"/></svg></span>
+      <span class="brand-name">Equity Research</span>
+    </div>
+    <div class="account" id="account" hidden>
+      <span class="user"><span class="avatar" id="avatar" aria-hidden="true"></span><span class="user-email" id="user-email"></span></span>
+      <button type="button" class="ghost-button" id="sign-out" aria-label="Sign out">
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4"/><path d="M16 17l5-5-5-5"/><path d="M21 12H9"/></svg>
+        <span class="label">Sign out</span>
+      </button>
+    </div>
+  </header>
+
+  <main class="hero" id="signed-out" hidden>
+    <section class="hero-copy">
+      <span class="eyebrow">Research tool · paper portfolio only</span>
+      <h1>Ask about any stock.<br>See exactly how the answer was made.</h1>
+      <p class="hero-lead">A supervisor routes your question to market-data, filings and portfolio agents. Every answer lists the agents and tools behind it.</p>
+      <div class="hero-actions">
+        <button type="button" class="soft-button" id="sign-in">
+          Sign in with WorkOS
+          <svg aria-hidden="true" width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+        </button>
+        <span class="fine-print">No real trades. No investment advice.</span>
+      </div>
+      <p class="sign-in-error" id="sign-in-error" role="alert" hidden>Sign-in did not finish: WorkOS returned you here, but the token request failed. Open the browser console for the error, then try again.</p>
+    </section>
+    <section class="example" aria-label="Example answer">
+      <span class="example-label">Example</span>
+      <div class="question">How are my holdings doing today?</div>
+      <div class="example-rows">
+        <span><span>AAPL · 50 shares</span><span class="gain">+1.2%</span></span>
+        <span><span>MSFT · 30 shares</span><span class="drop">−0.8%</span></span>
+        <span><span>NVDA · 20 shares</span><span class="gain">+2.6%</span></span>
+      </div>
+      <div class="example-trace">
+        <span class="agent-pill">Portfolio agent</span><code>getHoldings()</code>
+        <span class="agent-pill">Market data agent</span><code>getQuote ×3</code>
+      </div>
+    </section>
+  </main>
+
+  <main class="workspace" id="signed-in" hidden>
+    <div class="conversation">
+      <div class="empty-state" id="empty-state">
+        <h1>What would you like to research?</h1>
+        <p>Ask about a stock, a filing or your paper portfolio.</p>
+      </div>
+      <div class="question" id="question" hidden></div>
+      <section class="card thinking" id="thinking" hidden aria-live="polite">
+        <span class="thinking-label"><span class="dots" aria-hidden="true"><span></span><span></span><span></span></span>Thinking…</span>
+        <span class="skeleton" aria-hidden="true"><span style="width: 92%"></span><span style="width: 78%"></span><span style="width: 54%"></span></span>
+        <span class="thinking-hint">Agents can take 10–30 seconds when several tools run.</span>
+      </section>
+      <section class="card" id="answer-card" hidden aria-live="polite">
+        <h2 class="visually-hidden">Answer</h2>
+        <div class="answer" id="answer"></div>
+      </section>
+      <section class="card error" id="error-card" hidden role="alert">
+        <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A8404F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5v.5"/></svg>
+        <div class="error-body">
+          <h2 id="error-title"></h2>
+          <p id="error-detail"></p>
+          <button type="button" class="soft-button" id="error-action" hidden></button>
+        </div>
+      </section>
+    </div>
+    <div class="side">
+      <aside class="card trace" id="trace" hidden aria-label="How this answer was made">
+        <div class="trace-head">
+          <h2>Trace</h2>
+          <span class="badge" id="cached-badge"></span>
+        </div>
+        <ol class="trace-steps" id="trace-steps"></ol>
+        <p class="trace-note" id="trace-note" hidden></p>
+      </aside>
+      <section class="card examples" aria-labelledby="examples-title">
+        <h2 id="examples-title">Try asking</h2>
+        <ul class="example-prompts">
+          <li><button type="button" class="example-prompt"><span class="example-kind">Portfolio</span><span class="example-text">What stocks do I hold?</span></button></li>
+          <li><button type="button" class="example-prompt"><span class="example-kind">Quote</span><span class="example-text">What's the price of Apple?</span></button></li>
+          <li><button type="button" class="example-prompt"><span class="example-kind">Filings</span><span class="example-text">What risks does Apple list in its latest 10-K?</span></button></li>
+          <li><button type="button" class="example-prompt"><span class="example-kind">Portfolio + market</span><span class="example-text">How are my holdings doing today?</span></button></li>
+          <li><button type="button" class="example-prompt"><span class="example-kind">News</span><span class="example-text">What's the latest news on Microsoft?</span></button></li>
+          <li><button type="button" class="example-prompt"><span class="example-kind">Guardrails</span><span class="example-text">The price of NVDA dropped last two weeks. Is it good time to buy NVDA now?</span></button></li>
+        </ul>
+        <p class="examples-hint">Click one to put it in the box, then press Enter.</p>
+      </section>
+    </div>
+  </main>
+
+  <footer class="prompt-bar" id="prompt-bar" hidden>
+    <form class="prompt" id="prompt-form">
+      <label for="prompt-input" class="visually-hidden">Ask a question</label>
+      <textarea id="prompt-input" rows="1" placeholder="Ask about a stock, a filing or your portfolio…" autocomplete="off"></textarea>
+      <button type="submit" class="soft-button" id="ask-button" aria-label="Ask">
+        <span class="label">Ask</span>
+        <svg aria-hidden="true" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"/><path d="M13 6l6 6-6 6"/></svg>
+      </button>
+    </form>
+    <p class="prompt-hint">Enter to ask · Shift+Enter for a new line · a new question replaces the last answer</p>
+  </footer>
+
+  <section class="card error setup-error" id="setup-error" hidden role="alert">
+    <svg aria-hidden="true" width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="#A8404F" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><circle cx="12" cy="12" r="9"/><path d="M12 7v6"/><path d="M12 16.5v.5"/></svg>
+    <div class="error-body">
+      <h2>The chat page cannot start</h2>
+      <p id="setup-error-detail"></p>
+    </div>
+  </section>
+
+  <script type="module">
+    import { createClient, LoginRequiredError } from "https://cdn.jsdelivr.net/npm/@workos-inc/authkit-js@0.20.5/dist/index.mjs";
+
+    const AGENT_LABELS = {
+      "market-data": "Market data agent",
+      filings: "Filings analyst",
+      portfolio: "Portfolio agent",
+    };
+    // A URL, or a signed percentage such as +1.2% or −0.8% that does not follow a letter, digit or dot.
+    const ANSWER_TOKENS = /(https?:\/\/[^\s<>"'`]+)|((?<![\w.])[+\-−]\d+(?:\.\d+)?%)/g;
+    const URL_TRAILING_PUNCTUATION = /[.,;:!?)\]]+$/;
+
+    const element = (id) => document.getElementById(id);
+    const promptInput = element("prompt-input");
+    const askButton = element("ask-button");
+
+    let authkit;
+    let lastQuestion = "";
+
+    function show(id, visible) {
+      element(id).hidden = !visible;
+    }
+
+    function showSetupError(detail) {
+      element("setup-error-detail").textContent = detail;
+      show("setup-error", true);
+    }
+
+    function clearConversation() {
+      lastQuestion = "";
+      element("question").textContent = "";
+      element("answer").replaceChildren();
+      element("trace-steps").replaceChildren();
+      promptInput.value = "";
+      ["question", "thinking", "answer-card", "error-card", "trace"].forEach((id) => show(id, false));
+      show("empty-state", true);
+    }
+
+    function showSignedOut() {
+      clearConversation();
+      ["account", "signed-in", "prompt-bar"].forEach((id) => show(id, false));
+      show("signed-out", true);
+    }
+
+    function showSignedIn(email) {
+      element("user-email").textContent = email;
+      element("avatar").textContent = email.charAt(0).toUpperCase();
+      show("signed-out", false);
+      ["account", "signed-in", "prompt-bar"].forEach((id) => show(id, true));
+      promptInput.focus();
+    }
+
+    /// Builds the answer from text nodes only: URLs become links, signed percentages are coloured.
+    function renderAnswer(answerText) {
+      const answerElement = element("answer");
+      answerElement.replaceChildren();
+      let textStart = 0;
+      for (const match of answerText.matchAll(ANSWER_TOKENS)) {
+        answerElement.append(answerText.slice(textStart, match.index));
+        if (match[1]) {
+          const href = match[1].replace(URL_TRAILING_PUNCTUATION, "");
+          const link = document.createElement("a");
+          link.href = href;
+          link.textContent = href;
+          link.target = "_blank";
+          link.rel = "noopener noreferrer";
+          answerElement.append(link, match[1].slice(href.length));
+        } else {
+          const change = document.createElement("span");
+          change.className = match[2].startsWith("+") ? "gain" : "drop";
+          change.textContent = match[2];
+          answerElement.append(change);
+        }
+        textStart = match.index + match[0].length;
+      }
+      answerElement.append(answerText.slice(textStart));
+      show("answer-card", true);
+    }
+
+    function formatToolCall(toolCall) {
+      const argumentValues = Object.values(toolCall.arguments ?? {}).map((argumentValue) =>
+        typeof argumentValue === "string" ? argumentValue : JSON.stringify(argumentValue));
+      return `${toolCall.name}(${argumentValues.join(", ")})`;
+    }
+
+    /// One step per run of consecutive tool calls by the same agent, in call order.
+    function renderTrace(toolsCalled, cached) {
+      const badge = element("cached-badge");
+      badge.textContent = cached ? "cached: yes" : "cached: no";
+      badge.classList.toggle("cached", cached);
+
+      const traceSteps = [];
+      for (const toolCall of toolsCalled) {
+        const lastStep = traceSteps.at(-1);
+        if (lastStep && lastStep.agentName === toolCall.agentName) {
+          lastStep.toolCalls.push(toolCall);
+        } else {
+          traceSteps.push({ agentName: toolCall.agentName, toolCalls: [toolCall] });
+        }
+      }
+
+      const stepList = element("trace-steps");
+      stepList.replaceChildren(...traceSteps.map((traceStep, stepIndex) => {
+        const stepItem = document.createElement("li");
+        stepItem.innerHTML =
+          '<span class="rail"><span class="step-number"></span><span class="rail-line"></span></span>' +
+          '<span class="step"><span class="agent"></span><span class="tools"></span></span>';
+        stepItem.querySelector(".step-number").textContent = String(stepIndex + 1);
+        stepItem.querySelector(".agent").textContent = AGENT_LABELS[traceStep.agentName] ?? traceStep.agentName;
+        stepItem.querySelector(".tools").append(...traceStep.toolCalls.map((toolCall) => {
+          const toolLabel = document.createElement("code");
+          toolLabel.className = "tool";
+          toolLabel.textContent = formatToolCall(toolCall);
+          return toolLabel;
+        }));
+        return stepItem;
+      }));
+      show("trace-steps", traceSteps.length > 0);
+
+      const traceNote = element("trace-note");
+      traceNote.textContent = cached
+        ? "Served from the semantic cache. No agents or tools ran."
+        : "No tools were called.";
+      show("trace-note", traceSteps.length === 0);
+      show("trace", true);
+    }
+
+    function showError(title, detail, action) {
+      element("error-title").textContent = title;
+      element("error-detail").textContent = detail;
+      const actionButton = element("error-action");
+      actionButton.hidden = !action;
+      if (action) {
+        actionButton.textContent = action.label;
+        actionButton.onclick = action.run;
+      }
+      show("error-card", true);
+    }
+
+    const retry = { label: "Try again", run: () => ask(lastQuestion) };
+    const signInAgain = { label: "Sign in again", run: () => authkit.signIn() };
+
+    function showHttpError(status) {
+      if (status === 401) {
+        showError("Your session has expired.", "Sign in again to continue.", signInAgain);
+      } else if (status === 403) {
+        showError("Your account cannot use the chat.", "It is missing the agent.chat permission in WorkOS.");
+      } else if (status === 400) {
+        showError("The question could not be sent.", "Check the question, then ask again.");
+      } else {
+        showError(`The request failed (HTTP ${status}).`, "Try again in a moment.", retry);
+      }
+    }
+
+    const examplePromptButtons = document.querySelectorAll(".example-prompt");
+
+    function setBusy(busy) {
+      promptInput.disabled = busy;
+      askButton.disabled = busy;
+      examplePromptButtons.forEach((exampleButton) => { exampleButton.disabled = busy; });
+      askButton.setAttribute("aria-busy", String(busy));
+      show("thinking", busy);
+    }
+
+    async function ask(question) {
+      lastQuestion = question;
+      ["empty-state", "answer-card", "error-card", "trace"].forEach((id) => show(id, false));
+      element("question").textContent = question;
+      show("question", true);
+      setBusy(true);
+      try {
+        let accessToken;
+        try {
+          accessToken = await authkit.getAccessToken();
+        } catch (tokenError) {
+          if (tokenError instanceof LoginRequiredError) {
+            showError("Your session has expired.", "Sign in again to continue.", signInAgain);
+            return;
+          }
+          throw tokenError;
+        }
+        let chatResponse;
+        try {
+          chatResponse = await fetch("/api/chat", {
+            method: "POST",
+            headers: { "Content-Type": "application/json", Authorization: `Bearer ${accessToken}` },
+            body: JSON.stringify({ message: question }),
+          });
+        } catch {
+          showError("Can't reach the server.", "Check that the agent app is running, then try again.", retry);
+          return;
+        }
+        if (!chatResponse.ok) {
+          showHttpError(chatResponse.status);
+          return;
+        }
+        const chatResult = await chatResponse.json();
+        renderAnswer(chatResult.answer ?? "");
+        renderTrace(chatResult.toolsCalled ?? [], chatResult.cached === true);
+      } catch {
+        showError("Something went wrong.", "Try again in a moment.", retry);
+      } finally {
+        setBusy(false);
+        promptInput.focus();
+      }
+    }
+
+    function resizePrompt() {
+      promptInput.style.height = "auto";
+      promptInput.style.height = `${Math.min(promptInput.scrollHeight, 160)}px`;
+    }
+
+    element("prompt-form").addEventListener("submit", (submitEvent) => {
+      submitEvent.preventDefault();
+      const question = promptInput.value.trim();
+      if (!question || askButton.disabled) return;
+      promptInput.value = "";
+      resizePrompt();
+      ask(question);
+    });
+    promptInput.addEventListener("keydown", (keyEvent) => {
+      if (keyEvent.key === "Enter" && !keyEvent.shiftKey && !keyEvent.isComposing) {
+        keyEvent.preventDefault();
+        element("prompt-form").requestSubmit();
+      }
+    });
+    promptInput.addEventListener("input", resizePrompt);
+    // Fills the box without sending, so a stray click never replaces the current answer.
+    examplePromptButtons.forEach((exampleButton) => {
+      exampleButton.addEventListener("click", () => {
+        promptInput.value = exampleButton.querySelector(".example-text").textContent;
+        resizePrompt();
+        promptInput.focus();
+      });
+    });
+    element("sign-in").addEventListener("click", () => authkit.signIn());
+    element("sign-out").addEventListener("click", async () => {
+      showSignedOut();
+      try {
+        await authkit.signOut({ returnTo: window.location.origin });
+      } catch {
+        // No access token in memory (the session had already expired): nothing to sign out of.
+      }
+    });
+
+    async function start() {
+      let workosClientId;
+      try {
+        const configResponse = await fetch("/ui-config");
+        if (!configResponse.ok) throw new Error(`HTTP ${configResponse.status}`);
+        workosClientId = (await configResponse.json()).workosClientId;
+      } catch {
+        showSetupError("Can't reach the agent app.");
+        return;
+      }
+      if (!workosClientId) {
+        showSetupError("WORKOS_CLIENT_ID is not set on the agent app.");
+        return;
+      }
+      const returnedFromWorkos = new URLSearchParams(window.location.search).has("code");
+      try {
+        authkit = await createClient(workosClientId);
+      } catch {
+        showSetupError("Sign-in could not start. Check WORKOS_CLIENT_ID and the network.");
+        return;
+      }
+      if (returnedFromWorkos) {
+        history.replaceState(null, "", "/");
+      }
+      const signedInUser = authkit.getUser();
+      if (signedInUser) {
+        showSignedIn(signedInUser.email);
+      } else {
+        showSignedOut();
+        // authkit-js logs the failed code exchange to the console but does not throw.
+        show("sign-in-error", returnedFromWorkos);
+      }
+    }
+
+    start();
+  </script>
+</body>
+</html>

@@ -9,7 +9,7 @@ What happens, step by step, for each thing a user does. Spec IDs point to [stock
 3. The page checks that `state` matches the saved value. It then exchanges `code` and the PKCE `code_verifier` for an access token at the WorkOS token endpoint.
 4. The page keeps the token in memory (not `localStorage`), removes `code` and `state` from the URL, and reads `exp` from the token claims. It does not verify the signature. The token came straight from the WorkOS token endpoint over TLS, and the agent app validates it on every call.
 5. If `exp` is in the future, the page shows the chat window. Otherwise it restarts the login, or uses the refresh token if it has one. This check only decides whether to show the chat window. It is not a security control.
-6. The page sends the token as a Bearer header on every API call. The agent app validates signature, issuer, expiry, audience and scopes (SEC-3). The user is identified from the token, never from prompt text (SEC-4). A 401 or 403 sends the user back to step 1.
+6. The page sends the token as a Bearer header on every API call. The agent app validates signature, issuer, expiry and scopes (SEC-3). The user is identified from the token, never from prompt text (SEC-4). A 401 or 403 sends the user back to step 1.
 
 A page refresh loses the in-memory token, so the page repeats step 1 (a silent login or refresh).
 

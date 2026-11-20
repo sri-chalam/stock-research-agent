@@ -1,6 +1,6 @@
 # Local stack: `docker compose build --pull && docker compose up` (`--pull`: ADR 0012). Keys come from the git-ignored .env (copy .env.example).
-# Neither app has auth before Iteration 5, so host ports are bound to 127.0.0.1 only. Inside the
-# containers the apps listen on 0.0.0.0 so Compose networking and the port bindings can reach them.
+# Host ports are bound to 127.0.0.1 only. Inside the containers the apps listen on 0.0.0.0 so Compose networking and
+# the port bindings can reach them. agent-app and the three MCP servers validate WorkOS tokens (WORKOS_* in .env).
 services:
   # One Postgres + pgvector for the project, one schema per app (initdb/ creates them). The
   # database is disposable: `docker compose down` drops it and filings-mcp re-ingests on startup.
@@ -34,6 +34,8 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       # Only this service gets the Finnhub key (MCP-1).
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:?set FINNHUB_API_KEY in .env}
+      WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
+      WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/actuator/health"]
       interval: 5s
@@ -53,6 +55,8 @@ services:
       SEC_USER_AGENT: ${SEC_USER_AGENT:?set SEC_USER_AGENT in .env}
       FILINGS_DB_HOST: postgres
       FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
+      WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
+      WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
     # filings-mcp fails to start when Postgres is unreachable.
     depends_on:
       postgres:
@@ -75,6 +79,10 @@ services:
       SERVER_ADDRESS: 0.0.0.0
       PORTFOLIO_DB_HOST: postgres
       PORTFOLIO_DB_PASSWORD: ${PORTFOLIO_DB_PASSWORD:-portfolio-local-dev}
+      WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
+      WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
+      WORKOS_DEMO_USER_1_SUB: ${WORKOS_DEMO_USER_1_SUB:?set WORKOS_DEMO_USER_1_SUB in .env}
+      WORKOS_DEMO_USER_2_SUB: ${WORKOS_DEMO_USER_2_SUB:?set WORKOS_DEMO_USER_2_SUB in .env}
     # portfolio-mcp fails to start when Postgres is unreachable (schema.sql runs on startup).
     depends_on:
       postgres:
@@ -101,6 +109,10 @@ services:
       ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:?set ANTHROPIC_API_KEY in .env}
       SEM_CACHE_DB_HOST: postgres
       SEM_CACHE_DB_PASSWORD: ${SEM_CACHE_DB_PASSWORD:-sem-cache-local-dev}
+      WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
+      WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
+      # The chat page's sign-in (public Client ID). Empty: the page shows a setup error.
+      WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
     # agent-app fails to start when Postgres (semantic cache) or any MCP server is unreachable.
     depends_on:
       postgres:

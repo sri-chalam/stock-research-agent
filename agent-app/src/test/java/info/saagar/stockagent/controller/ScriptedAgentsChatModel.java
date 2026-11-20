@@ -103,12 +103,29 @@ class ScriptedAgentsChatModel implements ChatModel {
         : MarketDataAgentConfig.MARKET_DATA_AGENT_NAME;
   }
 
-  /// A classifier reply with the given freshness class and tickers.
+  /// A classifier reply with the given freshness class and tickers, and neither guardrail flag set.
   static ChatResponse classifierReply(String freshnessClass, List<String> tickers) {
+    return classifierReply(freshnessClass, tickers, false, false);
+  }
+
+  /// A classifier reply with the given freshness class, tickers and guardrail flags.
+  static ChatResponse classifierReply(
+      String freshnessClass,
+      List<String> tickers,
+      boolean injectionSuspected,
+      boolean adviceRequest) {
     return respond(
         AiMessage.from(
             JSON_MAPPER.writeValueAsString(
-                Map.of("freshness", freshnessClass, "tickers", tickers))));
+                Map.of(
+                    "freshness",
+                    freshnessClass,
+                    "tickers",
+                    tickers,
+                    "injectionSuspected",
+                    injectionSuspected,
+                    "adviceRequest",
+                    adviceRequest))));
   }
 
   @Override

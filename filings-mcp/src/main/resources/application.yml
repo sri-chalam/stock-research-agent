@@ -3,6 +3,18 @@ spring:
     name: filings-mcp
   config:
     import: classpath:common.yml
+  # OAuth2 resource server (SEC-2): standard properties only. WorkOS access tokens have no aud claim,
+  # so no audience is checked; McpController requires the filings.read permission instead.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Copied exactly from a real token's iss: https://api.workos.com/user_management/<client_id>
+          issuer-uri: ${WORKOS_ISSUER_URI}
+          # Set explicitly, so startup needs no OIDC discovery call to the issuer.
+          jwk-set-uri: ${WORKOS_JWK_SET_URI}
+          # WorkOS puts permissions in a "permissions" array; each becomes a SCOPE_<permission> authority.
+          authorities-claim-name: permissions
 
 server:
   port: 8082

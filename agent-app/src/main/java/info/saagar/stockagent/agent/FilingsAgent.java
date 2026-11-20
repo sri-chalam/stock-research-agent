@@ -11,7 +11,7 @@ import info.saagar.stockagent.config.FilingsAgentConfig;
 public interface FilingsAgent {
 
   /// ID of the system prompt version, taken from its filename and logged with every call.
-  String PROMPT_ID = "filings-agent-v2";
+  String PROMPT_ID = "filings-agent-v3";
 
   /// Answers a filings sub-question.
   ///

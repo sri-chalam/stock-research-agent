@@ -8,6 +8,7 @@ dependencies {
 
     implementation(libs.spring.boot.starter.web)
     implementation(libs.spring.boot.starter.actuator)
+    implementation(libs.spring.boot.starter.oauth2.resource.server)
     implementation(libs.spring.boot.starter.validation)
     implementation(libs.bundles.langchain4j)
     // Semantic cache: in-process embedding model and its own Postgres table.
@@ -17,4 +18,5 @@ dependencies {
     runtimeOnly(libs.postgresql)
 
     testImplementation(libs.spring.boot.starter.test)
+    testImplementation(testFixtures(project(":common")))
 }

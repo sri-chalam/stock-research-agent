@@ -16,7 +16,7 @@ Three ECS tasks are deployed, all on the Fargate Spot capacity provider:
 2. Bifrost gateway.
 3. MCP servers: the three servers run as three containers in one task, each on its own port.
 
-Bifrost registers the three server URLs, which differ by port. Each server keeps a distinct audience URL for token validation.
+Bifrost registers the three server URLs, which differ by port. Each server requires its own scope for token validation (WorkOS tokens carry no audience).
 
 ## Consequences
 

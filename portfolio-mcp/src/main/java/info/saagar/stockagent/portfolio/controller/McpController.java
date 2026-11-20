@@ -9,15 +9,19 @@ import dev.langchain4j.mcp.protocol.McpCallToolResult;
 import dev.langchain4j.mcp.protocol.McpJsonRpcMessage;
 import info.saagar.stockagent.portfolio.tool.PortfolioUser;
 import java.util.Map;
-import java.util.Optional;
+import java.util.Set;
+import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.slf4j.MDC;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.GrantedAuthority;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
 /// Streamable HTTP transport (stateless, JSON responses only) for the LangChain4j [McpServer],
@@ -29,8 +33,12 @@ import org.springframework.web.bind.annotation.RestController;
 /// uses Jackson 2, so this controller parses and writes JSON-RPC with Jackson 2 rather than the
 /// app's Jackson 3. Only `POST` is mapped, so `GET /mcp` (the optional SSE stream) is a 405.
 ///
-/// A copy of the `filings-mcp` controller (ADR 0010), plus the user: a `tools/call` runs with the
-/// `X-User-Id` header bound to [PortfolioUser#USER_ID] and put in the MDC as `userId`.
+/// A copy of the `filings-mcp` controller (ADR 0010), plus the caller's token: `tools/list` and
+/// `tools/call` need a valid bearer token (401 without one) with `portfolio.read` (403 without it),
+/// and a `tools/call` runs with the token's `sub` bound to [PortfolioUser#USER_ID] and put in the
+/// MDC as `userId`. `initialize`, `ping` and notifications need no token, because the agent app's
+/// MCP client sends them outside any chat request. An invalid token is rejected with 401 for every
+/// method by the resource-server filter, before this controller.
 @RestController
 public class McpController {
 
@@ -38,6 +46,11 @@ public class McpController {
 
   private static final String MCP_ROUTE = "/mcp";
   private static final String USER_ID_MDC_KEY = "userId";
+  private static final Set<String> TOKEN_REQUIRED_METHODS = Set.of("tools/list", "tools/call");
+  private static final String PORTFOLIO_READ_SCOPE = "portfolio.read";
+  private static final String PORTFOLIO_READ_AUTHORITY = "SCOPE_" + PORTFOLIO_READ_SCOPE;
+  private static final String INSUFFICIENT_SCOPE_CHALLENGE =
+      "Bearer error=\"insufficient_scope\", scope=\"" + PORTFOLIO_READ_SCOPE + "\"";
   private static final ObjectMapper JSON_RPC_MAPPER = new ObjectMapper();
   private static final String PARSE_ERROR_REPLY =
       "{\"jsonrpc\":\"2.0\",\"id\":null,\"error\":{\"code\":-32700,\"message\":\"Parse error\"}}";
@@ -54,16 +67,14 @@ public class McpController {
   /// Handles one JSON-RPC message.
   ///
   /// @param jsonRpcRequestBody the JSON-RPC request or notification
-  /// @param userIdHeaderValue the `X-User-Id` header, or `null` when absent; a missing or invalid
-  ///   value makes the portfolio tools return an error
-  /// @return the JSON-RPC reply, `202` with no body for a notification, or `400` when the body is
-  ///   not JSON
+  /// @param userToken the caller's validated bearer token, or `null` when none was sent
+  /// @return the JSON-RPC reply, `202` with no body for a notification, `400` when the body is not
+  ///   JSON, or `401` / `403` for `tools/list` and `tools/call` without a token or without
+  ///   `portfolio.read`
   /// @throws JsonProcessingException if the reply cannot be serialized
   @PostMapping(path = MCP_ROUTE, produces = MediaType.APPLICATION_JSON_VALUE)
   public ResponseEntity<String> handle(
-      @RequestBody String jsonRpcRequestBody,
-      @RequestHeader(name = PortfolioUser.USER_ID_HEADER, required = false)
-          String userIdHeaderValue)
+      @RequestBody String jsonRpcRequestBody, @Nullable JwtAuthenticationToken userToken)
       throws JsonProcessingException {
     JsonNode jsonRpcMessage;
     try {
@@ -88,8 +99,17 @@ public class McpController {
     Object jsonRpcReply;
     if ("ping".equals(jsonRpcMethod) && jsonRpcId != null && !jsonRpcId.isNull()) {
       jsonRpcReply = pingReply(jsonRpcId);
-    } else if ("tools/call".equals(jsonRpcMethod)) {
-      jsonRpcReply = handleToolCall(jsonRpcMessage, PortfolioUser.fromHeader(userIdHeaderValue));
+    } else if (TOKEN_REQUIRED_METHODS.contains(jsonRpcMethod)) {
+      if (userToken == null) {
+        return accessDenied(jsonRpcMethod, HttpStatus.UNAUTHORIZED, "Bearer");
+      }
+      if (!grantsPortfolioRead(userToken)) {
+        return accessDenied(jsonRpcMethod, HttpStatus.FORBIDDEN, INSUFFICIENT_SCOPE_CHALLENGE);
+      }
+      jsonRpcReply =
+          "tools/call".equals(jsonRpcMethod)
+              ? handleToolCall(jsonRpcMessage, userToken.getToken().getSubject())
+              : mcpServer.handle(jsonRpcMessage);
     } else {
       jsonRpcReply = mcpServer.handle(jsonRpcMessage);
     }
@@ -106,14 +126,29 @@ public class McpController {
     return pingReply;
   }
 
-  /// Runs a `tools/call` for the user, when one is identified, and logs it on both sides. Tool
-  /// failures are logged by the tools, since `McpServer` swallows the exception.
-  private McpJsonRpcMessage handleToolCall(JsonNode toolCallRequest, Optional<String> userId) {
-    if (userId.isEmpty()) {
-      return handleToolCall(toolCallRequest);
-    }
-    try (MDC.MDCCloseable userContext = MDC.putCloseable(USER_ID_MDC_KEY, userId.get())) {
-      return ScopedValue.where(PortfolioUser.USER_ID, userId.get())
+  private static boolean grantsPortfolioRead(JwtAuthenticationToken userToken) {
+    return userToken.getAuthorities().stream()
+        .map(GrantedAuthority::getAuthority)
+        .anyMatch(PORTFOLIO_READ_AUTHORITY::equals);
+  }
+
+  private static ResponseEntity<String> accessDenied(
+      String jsonRpcMethod, HttpStatus httpStatus, String bearerChallenge) {
+    log.atWarn()
+        .addKeyValue("eventName", "mcpAccessDenied")
+        .addKeyValue(
+            "eventData", Map.of("jsonRpcMethod", jsonRpcMethod, "httpStatus", httpStatus.value()))
+        .log("MCP request denied: missing token or scope");
+    return ResponseEntity.status(httpStatus)
+        .header(HttpHeaders.WWW_AUTHENTICATE, bearerChallenge)
+        .build();
+  }
+
+  /// Runs a `tools/call` for the token's user and logs it on both sides. Tool failures are logged
+  /// by the tools, since `McpServer` swallows the exception.
+  private McpJsonRpcMessage handleToolCall(JsonNode toolCallRequest, String userId) {
+    try (MDC.MDCCloseable userContext = MDC.putCloseable(USER_ID_MDC_KEY, userId)) {
+      return ScopedValue.where(PortfolioUser.USER_ID, userId)
           .call(() -> handleToolCall(toolCallRequest));
     }
   }

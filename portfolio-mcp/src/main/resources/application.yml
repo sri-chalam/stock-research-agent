@@ -9,10 +9,28 @@ spring:
     url: jdbc:postgresql://${PORTFOLIO_DB_HOST:localhost}:${PORTFOLIO_DB_PORT:5432}/${PORTFOLIO_DB_NAME:stockagent}
     username: ${PORTFOLIO_DB_USER:portfolio_mcp}
     password: ${PORTFOLIO_DB_PASSWORD}
-  # schema.sql and data.sql run on every start; both are idempotent.
+  # schema.sql runs on every start and is idempotent; DemoPortfolioSeeder then seeds the demo users.
   sql:
     init:
       mode: always
+  # OAuth2 resource server (SEC-2): standard properties only. WorkOS access tokens have no aud claim,
+  # so no audience is checked; McpController requires the portfolio.read permission instead.
+  security:
+    oauth2:
+      resourceserver:
+        jwt:
+          # Copied exactly from a real token's iss: https://api.workos.com/user_management/<client_id>
+          issuer-uri: ${WORKOS_ISSUER_URI}
+          # Set explicitly, so startup needs no OIDC discovery call to the issuer.
+          jwk-set-uri: ${WORKOS_JWK_SET_URI}
+          # WorkOS puts permissions in a "permissions" array; each becomes a SCOPE_<permission> authority.
+          authorities-claim-name: permissions
+
+# Demo users' WorkOS sub values (user_...), seeded with synthetic portfolios on startup.
+stock-agent:
+  demo-users:
+    user-1-sub: ${WORKOS_DEMO_USER_1_SUB}
+    user-2-sub: ${WORKOS_DEMO_USER_2_SUB}
 
 server:
   port: 8084

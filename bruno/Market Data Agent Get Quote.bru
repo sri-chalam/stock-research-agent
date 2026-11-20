@@ -1,0 +1,17 @@
+meta {
+  name: Market Data Agent Get Quote
+  type: http
+  seq: 4
+}
+
+post {
+  url: {{baseUrl}}/api/chat
+  body: json
+  auth: inherit
+}
+
+body:json {
+  {
+    "message": "What stocks do I hold?"
+  }
+}

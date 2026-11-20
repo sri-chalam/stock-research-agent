@@ -16,6 +16,9 @@ import java.util.Map;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.Test;
 import org.slf4j.MDC;
+import org.springframework.security.core.context.SecurityContextHolder;
+import org.springframework.security.oauth2.jwt.Jwt;
+import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
 /// Connects the real MCP client wiring to an in-process MCP server that lists several tools.
 class McpClientConfigTest {
@@ -37,6 +40,7 @@ class McpClientConfigTest {
   @AfterEach
   void closeClientAndServer() throws Exception {
     MDC.clear();
+    SecurityContextHolder.clearContext();
     marketDataMcpClient.close();
     fakeMcpServer.close();
   }
@@ -88,12 +92,18 @@ class McpClientConfigTest {
         .containsExactly(Map.of("X-Correlation-Id", "corr-123", "X-Trace-Id", "trace-456"));
   }
 
+  private static void signInAs(String bearerToken) {
+    Jwt accessToken =
+        Jwt.withTokenValue(bearerToken).header("alg", "RS256").subject("user_test_1").build();
+    SecurityContextHolder.getContext().setAuthentication(new JwtAuthenticationToken(accessToken));
+  }
+
   @Test
-  void marketDataToolCallDoesNotForwardTheUserId() {
+  void marketDataToolCallForwardsTheUsersBearerToken() {
     ToolExecutor getQuoteExecutor =
         marketDataToolsAllowing(List.of("getQuote")).toolExecutorByName("getQuote");
     MDC.put("correlationId", "corr-123");
-    MDC.put("userId", "alice");
+    signInAs("token-abc");
 
     getQuoteExecutor.execute(
         ToolExecutionRequest.builder()
@@ -104,11 +114,12 @@ class McpClientConfigTest {
         "memory-1");
 
     assertThat(fakeMcpServer.toolCallHeaders())
-        .containsExactly(Map.of("X-Correlation-Id", "corr-123"));
+        .containsExactly(
+            Map.of("X-Correlation-Id", "corr-123", "Authorization", "Bearer token-abc"));
   }
 
   @Test
-  void portfolioToolCallForwardsTheUserIdAndCorrelationId() throws Exception {
+  void portfolioToolCallForwardsTheUsersBearerTokenAndCorrelationId() throws Exception {
     try (FakeMcpServer fakePortfolioMcp = FakeMcpServer.start("getHoldings");
         McpClient portfolioMcpClient =
             mcpClientConfig.portfolioMcpClient(
@@ -118,7 +129,7 @@ class McpClientConfigTest {
                         new McpServerProperties.McpServerSettings(
                             fakePortfolioMcp.url(), "2025-11-25", Duration.ofSeconds(5)))))) {
       MDC.put("correlationId", "corr-123");
-      MDC.put("userId", "alice");
+      signInAs("token-abc");
 
       String holdingsText =
           portfolioMcpClient
@@ -132,7 +143,8 @@ class McpClientConfigTest {
 
       assertThat(holdingsText).isEqualTo(FakeMcpServer.HOLDINGS_TEXT);
       assertThat(fakePortfolioMcp.toolCallHeaders())
-          .containsExactly(Map.of("X-Correlation-Id", "corr-123", "X-User-Id", "alice"));
+          .containsExactly(
+              Map.of("X-Correlation-Id", "corr-123", "Authorization", "Bearer token-abc"));
     }
   }
 }

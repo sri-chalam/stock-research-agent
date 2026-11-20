@@ -4,7 +4,7 @@
 
 **Blocked by:** 01: Iteration 0 skeleton
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions (from the Iteration 0 grilling)
 

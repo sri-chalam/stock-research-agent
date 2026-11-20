@@ -1,7 +1,7 @@
 package info.saagar.stockagent.portfolio;
 
 /// Points `@SpringBootTest` contexts at an in-memory H2 database in PostgreSQL mode, so the app's
-/// `schema.sql` and `data.sql` run unchanged against a real SQL store.
+/// `schema.sql` and the demo-portfolio seeding run unchanged against a real SQL store.
 public final class PortfolioTestDatabase {
 
   /// Spring properties that replace the Postgres data source.

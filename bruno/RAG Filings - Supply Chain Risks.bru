@@ -1,0 +1,34 @@
+meta {
+  name: RAG Filings - Supply Chain Risks
+  type: http
+  seq: 14
+}
+
+post {
+  url: {{hostname}}/api/chat
+  body: json
+  auth: inherit
+}
+
+headers {
+  Content-Type: application/json
+  Accept: application/json
+  @description('UUID')
+  X-Correlation-Id: {{$randomUUID}}
+  @description('UUID')
+  X-Trace-Id: {{$randomUUID}}
+}
+
+body:json {
+  {
+    "message": "What supply-chain risks did Apple's last 10-K describe?"
+  }
+}
+
+settings {
+  encodeUrl: true
+  timeout: 0
+  followRedirects: true
+  maxRedirects: 5
+  forwardAuthorizationHeader: false
+}

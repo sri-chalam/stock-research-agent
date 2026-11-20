@@ -45,6 +45,9 @@ public class PromptClassifierConfig {
         .modelName(classifierProperties.model())
         .maxTokens(classifierProperties.maxTokens())
         .timeout(classifierProperties.timeout())
+        // Haiku 5.5 thinks by default, which can spend all of the small max-tokens budget before
+        // any JSON is written. A one-shot classification does not need it.
+        .thinkingType("disabled")
         .supportedCapabilities(Capability.RESPONSE_FORMAT_JSON_SCHEMA)
         .build();
   }

@@ -4,7 +4,7 @@
 
 **Blocked by:** 02 (ADRs can be drafted earlier; README run instructions need 04)
 
-**Status:** ready-for-agent
+**Status:** done
 
 ## Decisions
 

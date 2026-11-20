@@ -63,8 +63,8 @@ public class PortfolioAgentConfig {
 
   /// Builds the Portfolio agent around the chat model and its MCP tools.
   ///
-  /// A failed tool call, such as "No user identified; send X-User-Id", is sent to the model as the
-  /// tool's result text, as for the Market data agent.
+  /// A failed tool call, such as "The portfolio is unavailable", is sent to the model as the tool's
+  /// result text, as for the Market data agent.
   ///
   /// @param portfolioChatModel chat model used by the agent
   /// @param portfolioToolProvider the MCP tools on the agent's allowlist

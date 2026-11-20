@@ -10,12 +10,13 @@ import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
-/// Classifies each chat prompt into a freshness class and the tickers it names, before the
-/// Supervisor runs.
+/// Classifies each chat prompt into a freshness class, the tickers it names and an input guardrail
+/// verdict, before the Supervisor runs.
 ///
 /// A classification that cannot be trusted never fails the request: when the call throws, returns
 /// no freshness class or names an invalid ticker, the prompt is treated as `REAL_TIME`, so the
-/// cache is skipped. There is no retry.
+/// cache is skipped. When the call throws or returns no guardrail flags, the guardrail fails open
+/// (`SKIPPED`) and `guardrailSkipped` is logged. There is no retry.
 public class PromptClassifier {
 
   private static final Logger log = LoggerFactory.getLogger(PromptClassifier.class);
@@ -47,10 +48,12 @@ public class PromptClassifier {
       skipData.put("exceptionMessage", String.valueOf(classifierException.getMessage()));
       skipData.put("classifyDurationTimeMs", elapsedMs(startNanos));
       logCacheSkipped(skipData);
-      return ClassifiedPrompt.realTimeFallback(null);
+      logGuardrailSkipped("classifierFailed");
+      return ClassifiedPrompt.realTimeFallback(InputGuardrailVerdict.SKIPPED, null);
     }
     Classification classification = classifierResult.content();
     ChatResponse classifierResponse = classifierResult.finalResponse();
+    InputGuardrailVerdict inputGuardrailVerdict = inputGuardrailVerdict(classification);
     if (classification.freshness() == null || classification.tickers() == null) {
       logCacheSkipped(
           Map.of(
@@ -58,7 +61,7 @@ public class PromptClassifier {
               "invalidClassification",
               "classifyDurationTimeMs",
               elapsedMs(startNanos)));
-      return ClassifiedPrompt.realTimeFallback(classifierResponse);
+      return ClassifiedPrompt.realTimeFallback(inputGuardrailVerdict, classifierResponse);
     }
     List<String> tickers =
         classification.tickers().stream()
@@ -75,7 +78,7 @@ public class PromptClassifier {
               invalidTickers,
               "classifyDurationTimeMs",
               elapsedMs(startNanos)));
-      return ClassifiedPrompt.realTimeFallback(classifierResponse);
+      return ClassifiedPrompt.realTimeFallback(inputGuardrailVerdict, classifierResponse);
     }
     log.atInfo()
         .addKeyValue("eventName", "promptClassified")
@@ -86,10 +89,35 @@ public class PromptClassifier {
                 classification.freshness(),
                 "tickers",
                 tickers,
+                "inputGuardrailVerdict",
+                inputGuardrailVerdict,
                 "classifyDurationTimeMs",
                 elapsedMs(startNanos)))
         .log("Prompt classified");
-    return new ClassifiedPrompt(classification.freshness(), tickers, classifierResponse);
+    return new ClassifiedPrompt(
+        classification.freshness(), tickers, inputGuardrailVerdict, classifierResponse);
+  }
+
+  /// Reads the guardrail flags, which are trusted even when the freshness class or a ticker is not:
+  /// injection wins over advice, and a missing flag fails open.
+  private static InputGuardrailVerdict inputGuardrailVerdict(Classification classification) {
+    if (classification.injectionSuspected() == null || classification.adviceRequest() == null) {
+      logGuardrailSkipped("missingGuardrailFlags");
+      return InputGuardrailVerdict.SKIPPED;
+    }
+    if (classification.injectionSuspected()) {
+      return InputGuardrailVerdict.INJECTION;
+    }
+    return classification.adviceRequest()
+        ? InputGuardrailVerdict.ADVICE
+        : InputGuardrailVerdict.PASSED;
+  }
+
+  private static void logGuardrailSkipped(String skipReason) {
+    log.atWarn()
+        .addKeyValue("eventName", "guardrailSkipped")
+        .addKeyValue("eventData", Map.of("skipReason", skipReason))
+        .log("Input guardrail skipped: classifier flags unavailable");
   }
 
   private static void logCacheSkipped(Map<String, Object> skipData) {

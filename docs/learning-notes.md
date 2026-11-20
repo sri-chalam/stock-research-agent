@@ -151,6 +151,23 @@ POST /api/chat  X-User-Id: alice        (validated; invalid → 400)
 - News agent dropped: it taught no new agentic concept; the news tools stay with the Market data agent.
 - Critic dropped: without raw tool outputs it could only check the Supervisor's copy of the numbers, a weak check.
 
+## OAuth (WorkOS AuthKit)
+
+Flow: PKCE sign-in → token → agent-app validates (`agent.chat`) → forwards the same token on every MCP call → each server validates its own permission → `portfolio-mcp` uses `sub` as the user.
+
+- User identity comes from the validated token's `sub`, never a header or prompt text.
+- WorkOS puts permissions in a `permissions` array (no `scope`) → `authorities-claim-name: permissions`.
+- Permissions come from organization membership; no membership → no permissions → 403.
+- No `aud` claim → no audience check; each server's own permission is its boundary.
+- `iss` must be copied exactly from a real token; tokens last 5 minutes.
+- Standard Spring properties only, so the identity provider can be swapped by config.
+
+Token passthrough (Option A) vs RFC 8693 token exchange:
+
+- Passthrough: one token works on every server, so one leak or one compromised server exposes all of them.
+- The MCP spec forbids it: a server must accept only tokens issued for it (else it becomes a confused deputy).
+- Token exchange: a short-lived, audience-bound token per server. Accepted Option A here: WorkOS tokens have no `aud`, and it's a demo where all servers are ours.
+
 ## Semantic cache
 
 Flow: classify → `REAL_TIME` skips the cache → embed (bge-small, in-process) → lookup (same ticker set, not expired, nearest row) → similarity ≥ 0.87 is a hit: stored answer, no agents → else run the Supervisor → store.
@@ -194,6 +211,14 @@ Decision: Supervisor stays on Haiku: same routing and answers at 1/8 the cost.
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.
 - SEC rejects a request with 403 unless its `User-Agent` names the app and gives a contact email. `filings-mcp` reads it from `SEC_USER_AGENT` and fails at startup without it.
 - XBRL tags vary by company. Revenue, for example, may be `Revenues`, `RevenueFromContractWithCustomerExcludingAssessedTax` or `SalesRevenueNet`. `getCompanyFacts` hides this behind a small fallback list per metric (`HeadlineMetric`).
+
+## Building with Claude Code
+
+Claude was excellent overall. A few problems kept coming back:
+
+- **Over-engineering.** It often proposed far more than the task needed: extra features and production-grade options for a small task, even though CLAUDE.md says to keep things simple. I had to keep reminding it that this project is for practising and refreshing AI concepts, not for building every feature in full.
+- **Commit messages miss the main change.** When asked for a one- or two-line Git commit message for the changes made not committed, it sometimes described a side change instead of the main one. For example, a session that added a new feature got a Git commit message saying the docs were updated.
+- **GUI mistakes it couldn't see.** The first chat page had no visible prompt box, and Claude didn't notice. Giving it a way to check the page itself, such as a browser MCP or explicit checks to run, would probably have caught this.
 
 ## Git
 
