@@ -20,9 +20,9 @@ LangChain4j's Anthropic client and its MCP client both use the JDK `HttpClient`.
   - Agent-app's tool-execution hook: one span per tool call, named after the tool.
   - The inline OTel API: the two embedding calls (filings query, semantic-cache question).
 - **Backend:** Grafana Tempo in Docker Compose with no volume, like Loki (ADR 0011). The apps export OTLP straight to `http://tempo:4318`, not through Alloy. Traces are viewed in the existing Grafana, which links Loki and Tempo both ways.
-- **Configuration:** one shared declarative config file (`docker/otel/otel-config.yaml`, passed with `OTEL_EXPERIMENTAL_CONFIG_FILE`):
+- **Configuration:** one shared declarative config file (`docker/otel/otel-config.yaml`, passed with `OTEL_CONFIG_FILE`; agent 2.33.1 silently ignores the older `OTEL_EXPERIMENTAL_CONFIG_FILE`):
   - traces only, with no OTel metrics or log export (logs keep going through Alloy to Loki)
-  - every request sampled, except SERVER spans on `/actuator/*`, which a `rule_based_routing` sampler drops so compose health checks leave no traces
+  - every request sampled, except SERVER spans on `/actuator/*`, which the SDK's `composite/development` `rule_based` sampler drops so compose health checks leave no traces (the agent's own `rule_based_routing` sampler is deprecated and logs a warning at startup). Child spans follow their parent, so a dropped health check's JDBC spans are dropped too
 - **Log correlation:** the log field `traceId` is the OTel trace ID, with a UUID fallback when there is no span. `X-Trace-Id` is no longer sent on MCP calls. `correlationId` is unchanged.
 - **Scope:** Docker Compose only. `bootRun` runs without the agent, and there is no AWS tracing.
 

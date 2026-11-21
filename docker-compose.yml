@@ -36,6 +36,11 @@ services:
       FINNHUB_API_KEY: ${FINNHUB_API_KEY:?set FINNHUB_API_KEY in .env}
       WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
+      # Tracing (ADR 0013): the shared agent config; service.name is the compose service name.
+      OTEL_CONFIG_FILE: /etc/otel/otel-config.yaml
+      OTEL_SERVICE_NAME: market-data-mcp
+    volumes:
+      - ./docker/otel/otel-config.yaml:/etc/otel/otel-config.yaml:ro
     healthcheck:
       test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:8081/actuator/health"]
       interval: 5s
@@ -57,6 +62,11 @@ services:
       FILINGS_DB_PASSWORD: ${FILINGS_DB_PASSWORD:-filings-local-dev}
       WORKOS_ISSUER_URI: ${WORKOS_ISSUER_URI:?set WORKOS_ISSUER_URI in .env}
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
+      # Tracing (ADR 0013): the shared agent config; service.name is the compose service name.
+      OTEL_CONFIG_FILE: /etc/otel/otel-config.yaml
+      OTEL_SERVICE_NAME: filings-mcp
+    volumes:
+      - ./docker/otel/otel-config.yaml:/etc/otel/otel-config.yaml:ro
     # filings-mcp fails to start when Postgres is unreachable.
     depends_on:
       postgres:
@@ -83,6 +93,11 @@ services:
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
       WORKOS_DEMO_USER_1_SUB: ${WORKOS_DEMO_USER_1_SUB:?set WORKOS_DEMO_USER_1_SUB in .env}
       WORKOS_DEMO_USER_2_SUB: ${WORKOS_DEMO_USER_2_SUB:?set WORKOS_DEMO_USER_2_SUB in .env}
+      # Tracing (ADR 0013): the shared agent config; service.name is the compose service name.
+      OTEL_CONFIG_FILE: /etc/otel/otel-config.yaml
+      OTEL_SERVICE_NAME: portfolio-mcp
+    volumes:
+      - ./docker/otel/otel-config.yaml:/etc/otel/otel-config.yaml:ro
     # portfolio-mcp fails to start when Postgres is unreachable (schema.sql runs on startup).
     depends_on:
       postgres:
@@ -113,6 +128,11 @@ services:
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
       # The chat page's sign-in (public Client ID). Empty: the page shows a setup error.
       WORKOS_CLIENT_ID: ${WORKOS_CLIENT_ID:-}
+      # Tracing (ADR 0013): the shared agent config; service.name is the compose service name.
+      OTEL_CONFIG_FILE: /etc/otel/otel-config.yaml
+      OTEL_SERVICE_NAME: agent-app
+    volumes:
+      - ./docker/otel/otel-config.yaml:/etc/otel/otel-config.yaml:ro
     # agent-app fails to start when Postgres (semantic cache) or any MCP server is unreachable.
     depends_on:
       postgres:
@@ -140,6 +160,14 @@ services:
     depends_on:
       - loki
 
+  # Tracing (ADR 0013): the apps export OTLP/HTTP straight to tempo:4318; Grafana queries tempo:3200.
+  # No published ports and no volume, like Loki: `docker compose down` wipes the traces.
+  tempo:
+    image: grafana/tempo:3.1.1
+    command: ["-target=all", "-config.file=/etc/tempo/tempo.yaml"]
+    volumes:
+      - ./docker/tempo/tempo.yaml:/etc/tempo/tempo.yaml:ro
+
   grafana:
     image: grafana/grafana:13.3.1
     ports:
@@ -153,3 +181,4 @@ services:
       - ./docker/grafana/provisioning:/etc/grafana/provisioning:ro
     depends_on:
       - loki
+      - tempo

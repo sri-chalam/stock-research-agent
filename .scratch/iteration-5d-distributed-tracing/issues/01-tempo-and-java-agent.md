@@ -11,10 +11,10 @@
 - ADR 0013 holds the full design.
 - Tempo runs in Docker Compose with no volume, like Loki. Its ports are not published to the host. Traces are viewed in the existing Grafana, through a file-provisioned Tempo data source.
 - The OpenTelemetry Java agent runs in all four app images. Its version is pinned in the version catalog, next to `opentelemetry-api` and `opentelemetry-instrumentation-annotations` (the manual-span tickets need those). A Gradle task in the `stockagent.spring-app` convention plugin copies the agent jar during the Docker build stage. Each image's entrypoint adds `-javaagent`. The jlink module list does not change, because `java.instrument` is already in it.
-- One shared declarative agent config file, mounted read-only into the four app containers and passed with `OTEL_EXPERIMENTAL_CONFIG_FILE`:
+- One shared declarative agent config file, mounted read-only into the four app containers and passed with `OTEL_CONFIG_FILE` (agent 2.33.1 silently ignores `OTEL_EXPERIMENTAL_CONFIG_FILE`):
   - OTLP export straight to `http://tempo:4318`, not through Alloy
   - traces only, with no OTel metrics or log export
-  - every request sampled, except SERVER spans on `/actuator/*`, which a `rule_based_routing` sampler drops (check the pattern syntax against the sampler docs)
+  - every request sampled, except SERVER spans on `/actuator/*`, which the SDK's `composite/development` `rule_based` sampler drops with the glob `/actuator*` (the agent's `rule_based_routing` is deprecated); child spans follow their parent
   - the service name read from an env var that compose sets per app (the compose service name)
 - `bootRun` gets no agent, and the Gradle build and tests run without one.
 

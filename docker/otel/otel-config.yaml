@@ -1,0 +1,45 @@
+# OpenTelemetry Java agent declarative config (ADR 0013), shared by the four app containers and passed
+# with OTEL_CONFIG_FILE. With this file the agent ignores the other OTEL_* env vars: every setting is here,
+# and env vars are read only where the file names them, as in ${OTEL_SERVICE_NAME} below.
+# The format is experimental and tied to the agent version pinned in gradle/libs.versions.toml.
+file_format: "1.2"
+
+resource:
+  attributes:
+    # Set per container in docker-compose.yml to the compose service name.
+    - name: service.name
+      value: ${OTEL_SERVICE_NAME}
+
+# W3C traceparent on outgoing calls (LLM, MCP) so one trace covers every app.
+propagator:
+  composite:
+    - tracecontext:
+    - baggage:
+
+# Traces only: no meter_provider or logger_provider, so no OTel metrics or log export
+# (logs go through Alloy to Loki, ADR 0011).
+tracer_provider:
+  processors:
+    - batch:
+        exporter:
+          otlp_http:
+            endpoint: http://tempo:4318/v1/traces
+  sampler:
+    composite/development:
+      rule_based:
+        # The first matching rule decides.
+        rules:
+          # Compose health checks hit /actuator/health every 5 s; they leave no traces. The pattern is
+          # a glob: `*` matches any characters, `/` included.
+          - span_kinds: [server]
+            attribute_patterns:
+              key: url.path
+              included: ["/actuator*"]
+            sampler:
+              always_off:
+          # Everything else: a root span is sampled, and a child span follows its parent, so the JDBC
+          # spans under a dropped health check are dropped too.
+          - sampler:
+              parent_threshold:
+                root:
+                  always_on:

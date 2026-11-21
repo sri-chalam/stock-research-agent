@@ -1,4 +1,4 @@
-# Loki is the only data source, so Explore works on first open (ADR 0011).
+# Loki is the default data source, so Explore opens on logs (ADR 0011). Tempo is in tempo.yaml.
 apiVersion: 1
 
 datasources:
