@@ -67,8 +67,8 @@ Package by layer under `info.saagar.stockagent`:
 | `cache` | The semantic cache, which is not an agent: `SemanticCache` (hit, miss and store rules), `SemanticCacheStore` with `JdbcSemanticCacheStore` (own `sem_cache` table, created by `sem-cache-schema.sql`) and `InMemorySemanticCacheStore` (tests), and its records (`CacheLookup`, `CacheCandidate`, `CacheEntry`) |
 | `guardrail` | `ResearchAnswerGuardrail`: the Supervisor's `OutputGuardrail` (removes links other than sec.gov and Finnhub news, adds "Not investment advice." once), applied through the supervisor builder's `output` function in `SupervisorAgentConfig` |
 | `tool` | Tool-call helpers (`ToolArguments`, `McpAuthorizationHeaders`: forwards the chat user's bearer token, with the correlation headers, on every MCP call). agent-app has no `@Tool` classes: tools come from MCP servers |
-| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`; `SecurityConfig`: OAuth2 resource server, `/api/**` needs `agent.chat`) |
-| `logging` | Agent-app-only logging support (`ToolExecutionLogger`, `AgentProvenanceListener`, `RunProvenance`, `McpCorrelationHeaders`) |
+| `config` | `@ConfigurationProperties` records and `@Configuration` bean wiring (e.g. `AgentProperties`, `McpServerProperties`, `MarketDataAgentConfig`, `McpClientConfig`, `SemanticCacheProperties`, `SemanticCacheConfig`; `TracingConfig`: the OTel `Tracer` for manual spans; `SecurityConfig`: OAuth2 resource server, `/api/**` needs `agent.chat`) |
+| `logging` | Agent-app-only logging and tracing support (`ToolExecutionLogger`, `AgentProvenanceListener`, `AgentSpanListener`: one span per agent run and per tool call, `RunProvenance`, `McpCorrelationHeaders`) |
 
 ### `market-data-mcp`
 

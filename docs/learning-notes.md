@@ -206,6 +206,12 @@ Supervisor Haiku vs Sonnet (3 Iteration 3 prompts, cache off, one run each):
 
 Decision: Supervisor stays on Haiku: same routing and answers at 1/8 the cost.
 
+## Tracing (OpenTelemetry)
+
+- Agent spans nest their LLM and tool calls: the agentic listener's start and end events run on the same thread, so each span can be made current (ADR 0013's risk did not happen).
+- `@WithSpan` works without the Java agent attached: it just does nothing. It also needs no Spring proxy.
+- Test spans without the agent by injecting an in-memory OTel SDK tracer (`ChatTracingTest`).
+
 ## SEC EDGAR
 
 - EDGAR APIs are keyed by the 10-digit zero-padded CIK (e.g. `CIK0000320193.json`), not by ticker. `filings-mcp` configures the CIK for each supported ticker (`filings.tickers` in its `application.yml`) instead of downloading `company_tickers.json`.

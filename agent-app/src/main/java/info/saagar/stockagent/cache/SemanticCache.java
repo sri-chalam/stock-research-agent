@@ -10,6 +10,9 @@ import info.saagar.stockagent.config.PromptClassifierConfig;
 import info.saagar.stockagent.config.SemanticCacheProperties;
 import info.saagar.stockagent.logging.RunProvenance;
 import info.saagar.stockagent.logging.RunProvenance.AgentCall;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.time.Clock;
 import java.util.Collection;
 import java.util.LinkedHashMap;
@@ -29,14 +32,21 @@ import org.slf4j.LoggerFactory;
 /// After a miss, the Supervisor's answer is stored only when no portfolio tool ran (the cache has
 /// no user scope), no tool call failed and the answer is not blank. A lookup or store failure never
 /// fails the request: it is logged and the request goes on without the cache.
+///
+/// With the OpenTelemetry Java agent, the lookup and the store are spans (`@WithSpan`), and the
+/// question embedding is a span inside the lookup (ADR 0013).
 public class SemanticCache {
 
   private static final Logger log = LoggerFactory.getLogger(SemanticCache.class);
+
+  /// Name of the span around the question embedding in a lookup.
+  static final String EMBEDDING_SPAN_NAME = "embedQuestion";
 
   private final EmbeddingModel embeddingModel;
   private final SemanticCacheStore semanticCacheStore;
   private final SemanticCacheProperties semanticCacheProperties;
   private final Clock clock;
+  private final Tracer tracer;
 
   /// Creates the cache.
   ///
@@ -44,15 +54,18 @@ public class SemanticCache {
   /// @param semanticCacheStore stores and searches the answers
   /// @param semanticCacheProperties switch, threshold and TTL
   /// @param clock decides expiry
+  /// @param tracer creates the embedding span; a no-op without the OpenTelemetry Java agent
   public SemanticCache(
       EmbeddingModel embeddingModel,
       SemanticCacheStore semanticCacheStore,
       SemanticCacheProperties semanticCacheProperties,
-      Clock clock) {
+      Clock clock,
+      Tracer tracer) {
     this.embeddingModel = embeddingModel;
     this.semanticCacheStore = semanticCacheStore;
     this.semanticCacheProperties = semanticCacheProperties;
     this.clock = clock;
+    this.tracer = tracer;
   }
 
   /// Looks a prompt up and logs `semanticCacheLookup`.
@@ -60,6 +73,7 @@ public class SemanticCache {
   /// @param question the user's prompt
   /// @param classifiedPrompt the prompt's freshness class and tickers
   /// @return a hit with the stored answer, a miss to store the answer with, or a skip
+  @WithSpan
   public CacheLookup lookup(String question, ClassifiedPrompt classifiedPrompt) {
     long startNanos = System.nanoTime();
     if (!semanticCacheProperties.enabled()) {
@@ -72,7 +86,12 @@ public class SemanticCache {
     Embedding questionEmbedding;
     Optional<CacheCandidate> nearestCandidate;
     try {
-      questionEmbedding = embeddingModel.embed(normalize(question)).content();
+      Span embeddingSpan = tracer.spanBuilder(EMBEDDING_SPAN_NAME).startSpan();
+      try {
+        questionEmbedding = embeddingModel.embed(normalize(question)).content();
+      } finally {
+        embeddingSpan.end();
+      }
       nearestCandidate =
           semanticCacheStore.findNearest(questionEmbedding.vector(), tickerKey, clock.instant());
     } catch (RuntimeException lookupException) {
@@ -99,6 +118,7 @@ public class SemanticCache {
   /// @param cacheLookup the lookup made before the Supervisor ran; never a hit
   /// @param answer the Supervisor's answer
   /// @param runProvenance the agents, tools and tokens of the Supervisor run
+  @WithSpan
   public void store(CacheLookup cacheLookup, String answer, RunProvenance runProvenance) {
     switch (cacheLookup) {
       case CacheLookup.Skipped skipped ->

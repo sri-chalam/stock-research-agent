@@ -11,6 +11,7 @@ import info.saagar.stockagent.agent.MarketDataAgent;
 import info.saagar.stockagent.agent.PortfolioAgent;
 import info.saagar.stockagent.guardrail.ResearchAnswerGuardrail;
 import info.saagar.stockagent.logging.AgentProvenanceListener;
+import info.saagar.stockagent.logging.AgentSpanListener;
 import info.saagar.stockagent.logging.ToolExecutionLogger;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -89,6 +90,7 @@ public class SupervisorAgentConfig {
   /// @param agentProperties per-agent settings
   /// @param agentProvenanceListener records which specialists and tools each run used
   /// @param toolExecutionLogger logs each tool call the specialists make
+  /// @param agentSpanListener opens a span per agent run and per tool call
   /// @param researchAnswerGuardrail rewrites the final answer (links and disclaimer)
   /// @return the Supervisor
   /// @throws IOException when the prompt resource cannot be read
@@ -101,6 +103,7 @@ public class SupervisorAgentConfig {
       AgentProperties agentProperties,
       AgentProvenanceListener agentProvenanceListener,
       ToolExecutionLogger toolExecutionLogger,
+      AgentSpanListener agentSpanListener,
       ResearchAnswerGuardrail researchAnswerGuardrail)
       throws IOException {
     String supervisorPrompt =
@@ -129,6 +132,7 @@ public class SupervisorAgentConfig {
         .maxAgentsInvocations(agentProperties.forAgent(SUPERVISOR_AGENT_NAME).maxSteps())
         .listener(agentProvenanceListener)
         .listener(toolExecutionLogger)
+        .listener(agentSpanListener)
         .build();
   }
 }

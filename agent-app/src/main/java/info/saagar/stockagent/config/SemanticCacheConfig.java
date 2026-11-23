@@ -8,6 +8,7 @@ import info.saagar.stockagent.cache.InMemorySemanticCacheStore;
 import info.saagar.stockagent.cache.JdbcSemanticCacheStore;
 import info.saagar.stockagent.cache.SemanticCache;
 import info.saagar.stockagent.cache.SemanticCacheStore;
+import io.opentelemetry.api.trace.Tracer;
 import java.time.Clock;
 import java.util.Map;
 import org.slf4j.Logger;
@@ -106,13 +107,19 @@ public class SemanticCacheConfig {
   /// @param questionEmbeddingModel embeds normalized questions
   /// @param semanticCacheStore the answer store
   /// @param semanticCacheProperties switch, threshold and TTL
+  /// @param tracer creates the question-embedding span
   /// @return the semantic cache
   @Bean
   public SemanticCache semanticCache(
       EmbeddingModel questionEmbeddingModel,
       SemanticCacheStore semanticCacheStore,
-      SemanticCacheProperties semanticCacheProperties) {
+      SemanticCacheProperties semanticCacheProperties,
+      Tracer tracer) {
     return new SemanticCache(
-        questionEmbeddingModel, semanticCacheStore, semanticCacheProperties, Clock.systemUTC());
+        questionEmbeddingModel,
+        semanticCacheStore,
+        semanticCacheProperties,
+        Clock.systemUTC(),
+        tracer);
   }
 }

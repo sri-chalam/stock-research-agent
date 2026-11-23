@@ -19,6 +19,10 @@ import info.saagar.stockagent.config.PromptClassifierConfig;
 import info.saagar.stockagent.config.SemanticCacheProperties;
 import info.saagar.stockagent.config.SupervisorAgentConfig;
 import info.saagar.stockagent.logging.RunProvenance;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -39,6 +43,7 @@ class SemanticCacheTest {
   private static final double THRESHOLD = 0.87;
   private static final Duration TTL = Duration.ofHours(1);
 
+  private final InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
   private final MutableClock clock = new MutableClock(Instant.parse("2026-11-17T12:00:00Z"));
 
   /// A clock that tests move forward.
@@ -74,7 +79,11 @@ class SemanticCacheTest {
         EMBEDDING_MODEL,
         new InMemorySemanticCacheStore(),
         new SemanticCacheProperties(enabled, THRESHOLD, TTL, "in-memory", null),
-        clock);
+        clock,
+        SdkTracerProvider.builder()
+            .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+            .build()
+            .get("semantic-cache-test"));
   }
 
   private static ClassifiedPrompt cacheable(String... tickers) {
@@ -132,6 +141,29 @@ class SemanticCacheTest {
               assertThat(hit.cachedAnswer().answer()).isEqualTo(RISK_ANSWER);
               assertThat(hit.cachedAnswer().similarity()).isGreaterThanOrEqualTo(THRESHOLD);
             });
+  }
+
+  @Test
+  void cacheableLookupRecordsTheQuestionEmbeddingAsASpan() {
+    SemanticCache semanticCache = semanticCache(true);
+
+    semanticCache.lookup(RISK_QUESTION, cacheable("AAPL"));
+
+    assertThat(spanExporter.getFinishedSpanItems())
+        .extracting(SpanData::getName)
+        .containsExactly(SemanticCache.EMBEDDING_SPAN_NAME);
+  }
+
+  @Test
+  void realTimeLookupEmbedsNothingAndRecordsNoSpan() {
+    SemanticCache semanticCache = semanticCache(true);
+
+    semanticCache.lookup(
+        "price of Apple",
+        new ClassifiedPrompt(
+            FreshnessClass.REAL_TIME, List.of("AAPL"), InputGuardrailVerdict.PASSED, null));
+
+    assertThat(spanExporter.getFinishedSpanItems()).isEmpty();
   }
 
   @Test

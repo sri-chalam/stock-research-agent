@@ -2,6 +2,7 @@ package info.saagar.stockagent.classifier;
 
 import dev.langchain4j.model.chat.response.ChatResponse;
 import dev.langchain4j.service.Result;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
@@ -34,8 +35,12 @@ public class PromptClassifier {
 
   /// Classifies a prompt.
   ///
+  /// With the OpenTelemetry Java agent, each call is a span (ADR 0013), with the classifier's LLM
+  /// call under it.
+  ///
   /// @param prompt the user's chat prompt
   /// @return the validated classification, or a `REAL_TIME` fallback
+  @WithSpan
   public ClassifiedPrompt classify(String prompt) {
     long startNanos = System.nanoTime();
     Result<Classification> classifierResult;

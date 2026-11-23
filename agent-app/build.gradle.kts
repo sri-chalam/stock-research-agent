@@ -16,7 +16,12 @@ dependencies {
     implementation(libs.spring.jdbc)
     implementation(libs.hikaricp)
     runtimeOnly(libs.postgresql)
+    // Manual spans (ADR 0013). Without the Java agent (bootRun, tests) the API is a no-op and
+    // @WithSpan does nothing.
+    implementation(libs.opentelemetry.api)
+    implementation(libs.opentelemetry.instrumentation.annotations)
 
     testImplementation(libs.spring.boot.starter.test)
     testImplementation(testFixtures(project(":common")))
+    testImplementation(libs.opentelemetry.sdk.testing)
 }
