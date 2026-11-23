@@ -12,6 +12,13 @@ import info.saagar.stockagent.filings.config.FilingsProperties;
 import info.saagar.stockagent.filings.config.RagProperties;
 import info.saagar.stockagent.filings.provider.FakeEdgarClient;
 import info.saagar.stockagent.filings.rag.FilingChunkMetadata;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.context.Scope;
+import io.opentelemetry.sdk.testing.exporter.InMemorySpanExporter;
+import io.opentelemetry.sdk.trace.SdkTracerProvider;
+import io.opentelemetry.sdk.trace.data.SpanData;
+import io.opentelemetry.sdk.trace.export.SimpleSpanProcessor;
 import java.util.List;
 import java.util.Map;
 import org.junit.jupiter.api.Test;
@@ -34,6 +41,12 @@ class SearchFilingsTest {
           "Foreign exchange rates affect the Company's reported revenue.",
           "Cyber attacks could disrupt the Company's online services.");
 
+  private final InMemorySpanExporter spanExporter = InMemorySpanExporter.create();
+  private final Tracer tracer =
+      SdkTracerProvider.builder()
+          .addSpanProcessor(SimpleSpanProcessor.create(spanExporter))
+          .build()
+          .get("search-filings-test");
   private final InMemoryEmbeddingStore<TextSegment> filingChunkStore =
       new InMemoryEmbeddingStore<>();
   private final FakeEdgarClient fakeEdgarClient = new FakeEdgarClient(List.of());
@@ -44,7 +57,8 @@ class SearchFilingsTest {
               null, null, null, Map.of("AAPL", "0000320193", "MSFT", "0000789019")),
           EMBEDDING_MODEL,
           filingChunkStore,
-          new RagProperties(List.of(), 1600, 200, 5, null));
+          new RagProperties(List.of(), 1600, 200, 5, null),
+          tracer);
 
   private void storeChunk(String ticker, String accessionNumber, String chunkText) {
     TextSegment filingChunk =
@@ -106,6 +120,23 @@ class SearchFilingsTest {
 
     assertThat(fakeEdgarClient.lastRequestedCik()).isNull();
     assertThat(fakeEdgarClient.fetchedDocumentUrls()).isEmpty();
+  }
+
+  @Test
+  void queryEmbeddingIsASpanUnderTheCurrentSpan() {
+    storeSyntheticChunks();
+    Span toolCallSpan = tracer.spanBuilder("searchFilings").startSpan();
+
+    try (Scope toolCallScope = toolCallSpan.makeCurrent()) {
+      filingsTools.searchFilings("AAPL", "supply chain");
+    } finally {
+      toolCallSpan.end();
+    }
+
+    SpanData embeddingSpan = spanExporter.getFinishedSpanItems().getFirst();
+    assertThat(embeddingSpan.getName()).isEqualTo(FilingsTools.EMBEDDING_SPAN_NAME);
+    assertThat(embeddingSpan.getParentSpanId())
+        .isEqualTo(toolCallSpan.getSpanContext().getSpanId());
   }
 
   @Test

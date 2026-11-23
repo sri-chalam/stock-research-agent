@@ -35,7 +35,9 @@ import tools.jackson.databind.json.JsonMapper;
       PortfolioTestDatabase.USERNAME_PROPERTY,
       PortfolioTestDatabase.PASSWORD_PROPERTY,
       PortfolioTestUsers.USER_1_SUB_PROPERTY,
-      PortfolioTestUsers.USER_2_SUB_PROPERTY
+      PortfolioTestUsers.USER_2_SUB_PROPERTY,
+      PortfolioTestUsers.NO_CLAUDE_TEST_USER_1_PROPERTY,
+      PortfolioTestUsers.NO_CLAUDE_TEST_USER_2_PROPERTY
     })
 @ExtendWith(OutputCaptureExtension.class)
 class McpControllerTest {

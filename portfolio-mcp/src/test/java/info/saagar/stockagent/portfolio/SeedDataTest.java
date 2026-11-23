@@ -13,9 +13,12 @@ import org.springframework.test.context.DynamicPropertySource;
 
 /// `schema.sql` and the demo-portfolio seeding run on every start against a database that outlives
 /// the app, so running them again must not fail or duplicate rows.
+///
+/// It counts every row, so it uses its own in-memory database: the shared one also holds what the
+/// other cached test contexts seeded.
 @SpringBootTest(
     properties = {
-      PortfolioTestDatabase.URL_PROPERTY,
+      SeedDataTest.OWN_DATABASE_URL_PROPERTY,
       PortfolioTestDatabase.USERNAME_PROPERTY,
       PortfolioTestDatabase.PASSWORD_PROPERTY,
       PortfolioTestUsers.USER_1_SUB_PROPERTY,
@@ -24,6 +27,9 @@ import org.springframework.test.context.DynamicPropertySource;
       PortfolioTestUsers.NO_CLAUDE_TEST_USER_2_PROPERTY
     })
 class SeedDataTest {
+
+  static final String OWN_DATABASE_URL_PROPERTY =
+      "spring.datasource.url=jdbc:h2:mem:seed-data;MODE=PostgreSQL;DATABASE_TO_LOWER=TRUE";
 
   @DynamicPropertySource
   static void trustTheTestIssuer(DynamicPropertyRegistry propertyRegistry) {

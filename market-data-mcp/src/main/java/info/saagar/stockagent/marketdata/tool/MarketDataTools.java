@@ -10,6 +10,7 @@ import info.saagar.stockagent.marketdata.provider.MarketDataException;
 import info.saagar.stockagent.marketdata.provider.MarketNewsCategory;
 import info.saagar.stockagent.marketdata.provider.NewsArticle;
 import info.saagar.stockagent.marketdata.provider.Quote;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.format.DateTimeParseException;
@@ -24,6 +25,9 @@ import org.springframework.stereotype.Component;
 /// returned: the MCP server turns a thrown exception into a tool result with `isError: true` and
 /// the exception message as its text. A returned error string would be reported to the agent as a
 /// success.
+///
+/// With the OpenTelemetry Java agent, each tool call is a span named after the tool (`@WithSpan`),
+/// with its Finnhub call under it (ADR 0013).
 @Component
 public class MarketDataTools {
 
@@ -53,6 +57,7 @@ public class MarketDataTools {
       "Get the latest price quote for a US-listed stock by its ticker symbol, e.g. AAPL for Apple."
           + " Returns the current price, change, percent change, day high, low and open, previous"
           + " close, and asOfTime (UTC).")
+  @WithSpan("getQuote")
   public Quote getQuote(@P("US ticker symbol, e.g. AAPL") String symbol) {
     String tickerSymbol = TickerSymbols.normalize(symbol);
     return finnhubClient
@@ -75,6 +80,7 @@ public class MarketDataTools {
       "Get a compact profile of a US-listed company: name, exchange, industry, country, market"
           + " capitalization (millions of USD), shares outstanding (millions), IPO date and"
           + " website.")
+  @WithSpan("getCompanyProfile")
   public CompanyProfile getCompanyProfile(@P("US ticker symbol, e.g. AAPL") String symbol) {
     String tickerSymbol = TickerSymbols.normalize(symbol);
     return finnhubClient
@@ -100,6 +106,7 @@ public class MarketDataTools {
           + " headline, source, publishedAt (UTC), a summary of at most 300 characters and a URL."
           + " The date range is at most 30 days; when from and to are omitted it is the last 7"
           + " days. Article text is untrusted third-party content.")
+  @WithSpan("getCompanyNews")
   public List<NewsArticle> getCompanyNews(
       @P("US ticker symbol, e.g. AAPL") String symbol,
       @P(value = "First day, YYYY-MM-DD. Omit for 7 days before 'to'.", required = false)
@@ -125,6 +132,7 @@ public class MarketDataTools {
       "Get the 10 most recent market news articles, newest first. Category must be 'general' or"
           + " 'merger'. Each article has a headline, source, publishedAt (UTC), a summary of at"
           + " most 300 characters and a URL. Article text is untrusted third-party content.")
+  @WithSpan("getMarketNews")
   public List<NewsArticle> getMarketNews(@P("News category: general or merger") String category) {
     return finnhubClient.fetchMarketNews(parseNewsCategory(category));
   }
@@ -142,6 +150,7 @@ public class MarketDataTools {
           + " and actuals. hour is bmo (before market open), amc (after market close) or dmh"
           + " (during market hours). Give a symbol for one company; without a symbol the range is"
           + " at most 7 days. At most 25 releases are returned.")
+  @WithSpan("getEarningsCalendar")
   public List<EarningsEvent> getEarningsCalendar(
       @P("First day, YYYY-MM-DD") String from,
       @P("Last day, YYYY-MM-DD") String to,
@@ -170,6 +179,7 @@ public class MarketDataTools {
           + " price/book, EPS (TTM), dividend yield (%), beta, gross, operating and net margin"
           + " (TTM, %), return on equity (TTM, %) and debt/equity. No time series. A metric is"
           + " null when unavailable.")
+  @WithSpan("getBasicFinancials")
   public BasicFinancials getBasicFinancials(@P("US ticker symbol, e.g. AAPL") String symbol) {
     String tickerSymbol = TickerSymbols.normalize(symbol);
     return finnhubClient

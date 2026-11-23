@@ -26,7 +26,9 @@ import org.springframework.web.context.WebApplicationContext;
       PortfolioTestDatabase.USERNAME_PROPERTY,
       PortfolioTestDatabase.PASSWORD_PROPERTY,
       PortfolioTestUsers.USER_1_SUB_PROPERTY,
-      PortfolioTestUsers.USER_2_SUB_PROPERTY
+      PortfolioTestUsers.USER_2_SUB_PROPERTY,
+      PortfolioTestUsers.NO_CLAUDE_TEST_USER_1_PROPERTY,
+      PortfolioTestUsers.NO_CLAUDE_TEST_USER_2_PROPERTY
     })
 class ActuatorEndpointsTest {
 

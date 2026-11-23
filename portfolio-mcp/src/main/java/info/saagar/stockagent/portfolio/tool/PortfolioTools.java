@@ -3,6 +3,7 @@ package info.saagar.stockagent.portfolio.tool;
 import dev.langchain4j.agent.tool.Tool;
 import info.saagar.stockagent.portfolio.repository.Holding;
 import info.saagar.stockagent.portfolio.repository.PortfolioRepository;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -16,6 +17,9 @@ import org.springframework.stereotype.Component;
 ///
 /// Errors are thrown, never returned: the MCP server turns a thrown exception into a tool result
 /// with `isError: true` and the exception message as its text.
+///
+/// With the OpenTelemetry Java agent, each tool call is a span named after the tool (`@WithSpan`),
+/// with its Postgres query under it (ADR 0013).
 @Component
 public class PortfolioTools {
 
@@ -41,6 +45,7 @@ public class PortfolioTools {
       "Get the current user's paper-portfolio holdings: ticker and number of shares for each"
           + " position, ordered by ticker. Takes no arguments; the user is identified by the"
           + " request. An empty list means the user holds nothing.")
+  @WithSpan("getHoldings")
   public List<Holding> getHoldings() {
     return readForCurrentUser("getHoldings", portfolioRepository::findHoldings);
   }
@@ -53,6 +58,7 @@ public class PortfolioTools {
       "Get the tickers on the current user's watchlist, in alphabetical order. Takes no"
           + " arguments; the user is identified by the request. An empty list means the"
           + " watchlist is empty.")
+  @WithSpan("getWatchlist")
   public List<String> getWatchlist() {
     return readForCurrentUser("getWatchlist", portfolioRepository::findWatchlistTickers);
   }

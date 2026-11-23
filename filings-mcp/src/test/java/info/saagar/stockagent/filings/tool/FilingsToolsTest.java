@@ -10,6 +10,7 @@ import info.saagar.stockagent.filings.config.RagProperties;
 import info.saagar.stockagent.filings.provider.EdgarFiling;
 import info.saagar.stockagent.filings.provider.FakeEdgarClient;
 import info.saagar.stockagent.filings.provider.XbrlFact;
+import io.opentelemetry.api.trace.TracerProvider;
 import java.math.BigDecimal;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
@@ -34,7 +35,8 @@ class FilingsToolsTest {
         new FilingsProperties(null, null, null, ciksByTicker),
         null,
         new InMemoryEmbeddingStore<>(),
-        new RagProperties(List.of(), 1600, 200, 5, null));
+        new RagProperties(List.of(), 1600, 200, 5, null),
+        TracerProvider.noop().get("filings-tools-test"));
   }
 
   private static EdgarFiling syntheticFiling(String form, int filingNumber) {

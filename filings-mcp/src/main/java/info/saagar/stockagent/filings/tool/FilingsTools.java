@@ -18,6 +18,9 @@ import info.saagar.stockagent.filings.provider.EdgarFiling;
 import info.saagar.stockagent.filings.provider.FilingsException;
 import info.saagar.stockagent.filings.provider.XbrlFact;
 import info.saagar.stockagent.filings.rag.FilingChunkMetadata;
+import io.opentelemetry.api.trace.Span;
+import io.opentelemetry.api.trace.Tracer;
+import io.opentelemetry.instrumentation.annotations.WithSpan;
 import java.time.LocalDate;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
@@ -41,10 +44,16 @@ import org.springframework.stereotype.Component;
 /// never returned: the MCP server turns a thrown exception into a tool result with `isError: true`
 /// and the exception message as its text. A returned error string would be reported to the agent as
 /// a success.
+///
+/// With the OpenTelemetry Java agent, each tool call is a span named after the tool (`@WithSpan`),
+/// and the `searchFilings` query embedding is a span inside it (ADR 0013).
 @Component
 public class FilingsTools {
 
   private static final Logger log = LoggerFactory.getLogger(FilingsTools.class);
+
+  /// Name of the span around the query embedding in `searchFilings`.
+  static final String EMBEDDING_SPAN_NAME = "embedQuery";
 
   static final int MAX_FILINGS = 10;
   private static final String SEARCH_UNAVAILABLE_MESSAGE =
@@ -65,6 +74,7 @@ public class FilingsTools {
   private final int searchMaxResults;
   private final Map<String, String> ciksByTicker;
   private final String unknownTickerMessage;
+  private final Tracer tracer;
 
   /// Creates the tools.
   ///
@@ -73,13 +83,16 @@ public class FilingsTools {
   /// @param embeddingModel embeds `searchFilings` queries; the model ingestion embedded chunks with
   /// @param filingChunkStore the ingested filing chunks
   /// @param ragProperties holds the number of chunks `searchFilings` returns
+  /// @param tracer creates the query-embedding span; a no-op without the OpenTelemetry Java agent
   public FilingsTools(
       EdgarClient edgarClient,
       FilingsProperties filingsProperties,
       EmbeddingModel embeddingModel,
       EmbeddingStore<TextSegment> filingChunkStore,
-      RagProperties ragProperties) {
+      RagProperties ragProperties,
+      Tracer tracer) {
     this.edgarClient = edgarClient;
+    this.tracer = tracer;
     this.embeddingModel = embeddingModel;
     this.filingChunkStore = filingChunkStore;
     this.searchMaxResults = ragProperties.searchMaxResults();
@@ -105,6 +118,7 @@ public class FilingsTools {
           + " sec.gov url. formType is required: 10-K (annual), 10-Q (quarterly) or 8-K (current"
           + " report). Only a fixed set of 10 large US companies is supported; another"
           + " ticker returns an error listing the supported ones.")
+  @WithSpan("listFilings")
   public List<FilingSummary> listFilings(
       @P("Ticker symbol, e.g. MSFT") String ticker,
       @P("Form type: 10-K, 10-Q or 8-K") String formType) {
@@ -136,6 +150,7 @@ public class FilingsTools {
           + " filedDate and accessionNumber of the 10-K that reported it. A metric the company"
           + " does not report is left out. Only a fixed set of 10 large US companies is"
           + " supported; another ticker returns an error listing the supported ones.")
+  @WithSpan("getCompanyFacts")
   public CompanyFacts getCompanyFacts(@P("Ticker symbol, e.g. AAPL") String ticker) {
     String cik = cikFor(ticker);
     List<XbrlFact> companyFacts = edgarClient.fetchCompanyFacts(cik, ALL_CONCEPT_NAMES);
@@ -165,6 +180,7 @@ public class FilingsTools {
           + " cited. Use it for questions about what a filing says, such as risks. Only a fixed"
           + " set of 10 large US companies is supported; another ticker returns an error listing"
           + " the supported ones.")
+  @WithSpan("searchFilings")
   public List<FilingChunk> searchFilings(
       @P("Ticker symbol, e.g. AAPL") String ticker,
       @P("What to search for, e.g. supply-chain risks") String query) {
@@ -174,7 +190,13 @@ public class FilingsTools {
     List<EmbeddingMatch<TextSegment>> chunkMatches;
     long embedDurationTimeMs;
     try {
-      Embedding queryEmbedding = embeddingModel.embed(query).content();
+      Embedding queryEmbedding;
+      Span embeddingSpan = tracer.spanBuilder(EMBEDDING_SPAN_NAME).startSpan();
+      try {
+        queryEmbedding = embeddingModel.embed(query).content();
+      } finally {
+        embeddingSpan.end();
+      }
       embedDurationTimeMs = elapsedMillis(startNanos);
       EmbeddingSearchRequest searchRequest =
           EmbeddingSearchRequest.builder()

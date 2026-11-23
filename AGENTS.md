@@ -90,7 +90,7 @@ Under `info.saagar.stockagent.filings` (application class `FilingsMcpApplication
 | `controller` | `McpController`: a copy of the `market-data-mcp` controller (ADR 0010) that requires `filings.read` instead of `marketdata.read` |
 | `tool` | LangChain4j `@Tool` classes served over MCP and their result records (`FilingsTools`, `FilingSummary`, `CompanyFacts`, `MetricValue`, `HeadlineMetric`, `FilingChunk`) |
 | `provider` | SEC EDGAR client interface, implementation and result records (`EdgarClient`, `RestClientEdgarClient`, `EdgarFiling`, `XbrlFact`, `FilingsException`) |
-| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store; `SecurityConfig`: OAuth2 resource server) |
+| `config` | `@ConfigurationProperties` records and bean wiring (`FilingsProperties` with the ticker→CIK map, `FilingsConfig`; `RagProperties`, `RagConfig` for the embedding model and the pgvector or in-memory chunk store; `TracingConfig`: the OTel `Tracer` for the `embedQuery` span; `SecurityConfig`: OAuth2 resource server) |
 | `rag` | Filings RAG ingestion: startup ingestion on a virtual thread, section extraction and chunk metadata keys (`FilingIngestion`, `FilingSections`, `FilingChunkMetadata`) |
 
 ### `portfolio-mcp`
