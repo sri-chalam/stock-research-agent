@@ -30,13 +30,20 @@ public class PortfolioConfig {
   /// @param jdbcClient client over the portfolio database
   /// @param user1Sub token `sub` of demo user 1, from `WORKOS_DEMO_USER_1_SUB`
   /// @param user2Sub token `sub` of demo user 2, from `WORKOS_DEMO_USER_2_SUB`
+  /// @param claudeTestUser1Sub token `sub` of Claude's test user 1, from `CLAUDE_TEST_USER_1_SUB`;
+  ///   blank when not configured
+  /// @param claudeTestUser2Sub token `sub` of Claude's test user 2, from `CLAUDE_TEST_USER_2_SUB`;
+  ///   blank when not configured
   /// @return the seeder, run once by Spring Boot after startup
   @Bean
   public DemoPortfolioSeeder demoPortfolioSeeder(
       JdbcClient jdbcClient,
       @Value("${stock-agent.demo-users.user-1-sub}") String user1Sub,
-      @Value("${stock-agent.demo-users.user-2-sub}") String user2Sub) {
-    return new DemoPortfolioSeeder(jdbcClient, user1Sub, user2Sub);
+      @Value("${stock-agent.demo-users.user-2-sub}") String user2Sub,
+      @Value("${stock-agent.demo-users.claude-test-user-1-sub:}") String claudeTestUser1Sub,
+      @Value("${stock-agent.demo-users.claude-test-user-2-sub:}") String claudeTestUser2Sub) {
+    return new DemoPortfolioSeeder(
+        jdbcClient, user1Sub, user2Sub, claudeTestUser1Sub, claudeTestUser2Sub);
   }
 
   /// Builds the transport-agnostic MCP server over the portfolio tools.

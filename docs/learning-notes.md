@@ -220,6 +220,8 @@ Claude was excellent overall. A few problems kept coming back:
 - **Commit messages miss the main change.** When asked for a one- or two-line Git commit message for the changes made not committed, it sometimes described a side change instead of the main one. For example, a session that added a new feature got a Git commit message saying the docs were updated.
 - **GUI mistakes it couldn't see.** The first chat page had no visible prompt box, and Claude didn't notice. Giving it a way to check the page itself, such as a browser MCP or explicit checks to run, would probably have caught this.
 
+- **Let Claude verify its own changes.** Claude couldn't sign in to the app, so it couldn't check a feature end to end. Two WorkOS test users now let it sign in and call the running stack (`scripts/chat-as.sh 1 "What stocks do I hold?"`), then check the answer, the tools called and the logs. How it does that is in [AGENTS.md](../AGENTS.md#test-a-feature-end-to-end-as-a-signed-in-user).
+
 ## Git
 
 - Use `git mv` when moving files; `git log --follow <file>` then shows the history from before the move. This works only once the move is committed.

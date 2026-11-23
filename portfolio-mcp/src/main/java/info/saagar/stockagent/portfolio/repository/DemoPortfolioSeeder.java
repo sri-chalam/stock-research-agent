@@ -2,6 +2,7 @@ package info.saagar.stockagent.portfolio.repository;
 
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Stream;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.ApplicationArguments;
@@ -10,6 +11,9 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 
 /// Seeds synthetic portfolios for the two WorkOS demo users, keyed by their token `sub`, on every
 /// start. The `sub` values come from configuration (env vars), never from committed SQL.
+///
+/// Claude's two optional test users get copies of demo user 1's and demo user 2's portfolios, so
+/// Claude can check portfolio answers against known rows. A blank `sub` is not seeded.
 ///
 /// At most 3 holdings each, so the Market data agent can quote every holding within its max-steps.
 /// `ON CONFLICT DO NOTHING` keeps restarts from duplicating rows.
@@ -27,16 +31,27 @@ public class DemoPortfolioSeeder implements ApplicationRunner {
   private final JdbcClient jdbcClient;
   private final String user1Sub;
   private final String user2Sub;
+  private final String claudeTestUser1Sub;
+  private final String claudeTestUser2Sub;
 
   /// Creates the seeder.
   ///
   /// @param jdbcClient client over the portfolio database
   /// @param user1Sub token `sub` of demo user 1
   /// @param user2Sub token `sub` of demo user 2
-  public DemoPortfolioSeeder(JdbcClient jdbcClient, String user1Sub, String user2Sub) {
+  /// @param claudeTestUser1Sub token `sub` of Claude's test user 1; blank to skip
+  /// @param claudeTestUser2Sub token `sub` of Claude's test user 2; blank to skip
+  public DemoPortfolioSeeder(
+      JdbcClient jdbcClient,
+      String user1Sub,
+      String user2Sub,
+      String claudeTestUser1Sub,
+      String claudeTestUser2Sub) {
     this.jdbcClient = jdbcClient;
     this.user1Sub = user1Sub;
     this.user2Sub = user2Sub;
+    this.claudeTestUser1Sub = claudeTestUser1Sub;
+    this.claudeTestUser2Sub = claudeTestUser2Sub;
   }
 
   /// Inserts the demo rows that are not there yet.
@@ -46,14 +61,35 @@ public class DemoPortfolioSeeder implements ApplicationRunner {
   public void run(ApplicationArguments applicationArguments) {
     int insertedRowCount =
         seedUser(user1Sub, USER_1_HOLDINGS, USER_1_WATCHLIST)
-            + seedUser(user2Sub, USER_2_HOLDINGS, USER_2_WATCHLIST);
+            + seedUser(user2Sub, USER_2_HOLDINGS, USER_2_WATCHLIST)
+            + seedUser(claudeTestUser1Sub, USER_1_HOLDINGS, USER_1_WATCHLIST)
+            + seedUser(claudeTestUser2Sub, USER_2_HOLDINGS, USER_2_WATCHLIST);
+    long claudeTestUserCount =
+        Stream.of(claudeTestUser1Sub, claudeTestUser2Sub)
+            .filter(DemoPortfolioSeeder::isSet)
+            .count();
     log.atInfo()
         .addKeyValue("eventName", "demoPortfoliosSeeded")
-        .addKeyValue("eventData", Map.of("demoUserCount", 2, "insertedRowCount", insertedRowCount))
+        .addKeyValue(
+            "eventData",
+            Map.of(
+                "demoUserCount",
+                2,
+                "claudeTestUserCount",
+                claudeTestUserCount,
+                "insertedRowCount",
+                insertedRowCount))
         .log("Demo portfolios seeded");
   }
 
+  private static boolean isSet(String userId) {
+    return userId != null && !userId.isBlank();
+  }
+
   private int seedUser(String userId, List<Holding> holdings, List<String> watchlistTickers) {
+    if (!isSet(userId)) {
+      return 0;
+    }
     int insertedRowCount = 0;
     for (Holding holding : holdings) {
       insertedRowCount +=

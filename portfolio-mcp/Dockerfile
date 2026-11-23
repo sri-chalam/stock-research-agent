@@ -15,8 +15,9 @@ COPY market-data-mcp/build.gradle.kts market-data-mcp/
 # contending for Gradle's cache locks. Tests are skipped here only for Docker layer caching
 # (CLAUDE.md §9); `./gradlew build` runs them.
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
-    ./gradlew :portfolio-mcp:build -x test --no-daemon --console=plain \
-    && cp portfolio-mcp/build/libs/portfolio-mcp-*[!n].jar /workspace/app.jar
+    ./gradlew :portfolio-mcp:build :portfolio-mcp:copyOtelJavaagent -x test --no-daemon --console=plain \
+    && cp portfolio-mcp/build/libs/portfolio-mcp-*[!n].jar /workspace/app.jar \
+    && cp portfolio-mcp/build/otel/opentelemetry-javaagent.jar /workspace/
 
 # A minimal Java runtime from the JDK's jmods, musl-linked like the final image (ADR 0012).
 # The module list includes JMX, JFR, jcmd and the attach API for metrics, the OpenTelemetry agent
@@ -37,5 +38,7 @@ RUN addgroup -S app && adduser -S app -G app
 USER app
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
+# Tracing (ADR 0013): compose mounts the agent's config file and sets OTEL_CONFIG_FILE.
+COPY --from=build /workspace/opentelemetry-javaagent.jar opentelemetry-javaagent.jar
 EXPOSE 8084
-ENTRYPOINT ["java", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-javaagent:opentelemetry-javaagent.jar", "-jar", "app.jar"]

@@ -15,8 +15,9 @@ COPY portfolio-mcp/build.gradle.kts portfolio-mcp/
 # contending for Gradle's cache locks. Tests are skipped here only for Docker layer caching
 # (CLAUDE.md §9); `./gradlew build` runs them.
 RUN --mount=type=cache,target=/root/.gradle,sharing=locked \
-    ./gradlew :filings-mcp:build -x test --no-daemon --console=plain \
-    && cp filings-mcp/build/libs/filings-mcp-*[!n].jar /workspace/app.jar
+    ./gradlew :filings-mcp:build :filings-mcp:copyOtelJavaagent -x test --no-daemon --console=plain \
+    && cp filings-mcp/build/libs/filings-mcp-*[!n].jar /workspace/app.jar \
+    && cp filings-mcp/build/otel/opentelemetry-javaagent.jar /workspace/
 
 # A minimal Java runtime from the JDK's jmods (ADR 0012). Not Alpine: ONNX Runtime and the DJL
 # tokenizer behind the in-process embedding model ship only glibc native libraries, so the runtime
@@ -42,6 +43,8 @@ RUN echo 'app:x:1000:1000::/home/app:/sbin/nologin' >> /etc/passwd \
 USER app
 WORKDIR /app
 COPY --from=build /workspace/app.jar app.jar
+# Tracing (ADR 0013): compose mounts the agent's config file and sets OTEL_CONFIG_FILE.
+COPY --from=build /workspace/opentelemetry-javaagent.jar opentelemetry-javaagent.jar
 EXPOSE 8082
 # ONNX Runtime loads its native library through System.load.
-ENTRYPOINT ["java", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]
+ENTRYPOINT ["java", "-javaagent:opentelemetry-javaagent.jar", "--enable-native-access=ALL-UNNAMED", "-jar", "app.jar"]

@@ -18,5 +18,15 @@ public final class PortfolioTestUsers {
   public static final String USER_2_SUB_PROPERTY =
       "stock-agent.demo-users.user-2-sub=" + USER_2_SUB;
 
+  /// Spring property that leaves Claude's test user 1 unseeded, even when the developer's shell
+  /// exports `CLAUDE_TEST_USER_1_SUB`.
+  public static final String NO_CLAUDE_TEST_USER_1_PROPERTY =
+      "stock-agent.demo-users.claude-test-user-1-sub=";
+
+  /// Spring property that leaves Claude's test user 2 unseeded, even when the developer's shell
+  /// exports `CLAUDE_TEST_USER_2_SUB`.
+  public static final String NO_CLAUDE_TEST_USER_2_PROPERTY =
+      "stock-agent.demo-users.claude-test-user-2-sub=";
+
   private PortfolioTestUsers() {}
 }

@@ -4,6 +4,11 @@ spotless = "8.10.4"
 langchain4j = "1.23.0"
 # langchain4j-agentic and langchain4j-mcp are beta and not managed by the BOM: pin exact versions.
 langchain4j-beta = "1.23.0-beta33"
+# OpenTelemetry Java agent (ADR 0013), in the Docker images only. The declarative config format in
+# docker/otel/otel-config.yaml is tied to this version. The API version is the one the agent is built
+# on (its instrumentation BOM), newer than the one the Spring Boot BOM manages.
+opentelemetry-javaagent = "2.33.1"
+opentelemetry-api = "1.67.0"
 
 [libraries]
 spring-boot-starter-web = { module = "org.springframework.boot:spring-boot-starter-web" }
@@ -37,6 +42,12 @@ langchain4j-community-mcp-server = { module = "dev.langchain4j:langchain4j-commu
 langchain4j-pgvector = { module = "dev.langchain4j:langchain4j-pgvector" }
 langchain4j-embeddings-bge-small-en-v15-q = { module = "dev.langchain4j:langchain4j-embeddings-bge-small-en-v15-q" }
 langchain4j-document-transformer-jsoup = { module = "dev.langchain4j:langchain4j-document-transformer-jsoup" }
+
+# Tracing (ADR 0013): the agent jar is copied into the images by stockagent.spring-app's
+# copyOtelJavaagent task; the API and annotations are for manual spans.
+opentelemetry-javaagent = { module = "io.opentelemetry.javaagent:opentelemetry-javaagent", version.ref = "opentelemetry-javaagent" }
+opentelemetry-api = { module = "io.opentelemetry:opentelemetry-api", version.ref = "opentelemetry-api" }
+opentelemetry-instrumentation-annotations = { module = "io.opentelemetry.instrumentation:opentelemetry-instrumentation-annotations", version.ref = "opentelemetry-javaagent" }
 
 # Gradle plugins used by the buildSrc convention plugins.
 spring-boot-gradle-plugin = { module = "org.springframework.boot:spring-boot-gradle-plugin", version.ref = "spring-boot" }
