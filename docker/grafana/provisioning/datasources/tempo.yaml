@@ -8,3 +8,14 @@ datasources:
     access: proxy
     url: http://tempo:3200
     editable: false
+    jsonData:
+      # Each span links to the log lines of its trace, from every app. The line filter runs before
+      # `| json` so only matching lines are parsed; the traceId match then drops Loki's and Tempo's
+      # own query logs, which contain the ID too. `$$` escapes Grafana's env var expansion in
+      # provisioning files.
+      tracesToLogsV2:
+        datasourceUid: loki
+        spanStartTimeShift: "-5m"
+        spanEndTimeShift: "5m"
+        customQuery: true
+        query: '{service=~".+"} |= "$${__trace.traceId}" | json | traceId="$${__trace.traceId}"'

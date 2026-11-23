@@ -8,21 +8,21 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
 
-/// Supplies the headers for each MCP request: the correlation headers plus `Authorization: Bearer`
+/// Supplies the headers for each MCP request: the correlation header plus `Authorization: Bearer`
 /// with the chat user's access token, forwarded unchanged (Option A, ADR 0001), so `portfolio-mcp`
 /// reads the user from the token's `sub`.
 ///
 /// The token travels in code, never in prompt text or the MDC, so it reaches neither the model nor
 /// a log line (SEC-4, SEC-5). The MCP transport calls this on the request thread, where Spring
 /// Security holds the validated token. Outside a chat request, as for the client's startup
-/// `initialize` and its health-check `ping`, there is no token and only the correlation headers are
+/// `initialize` and its health-check `ping`, there is no token and only the correlation header is
 /// sent.
 public class McpAuthorizationHeaders implements Supplier<Map<String, String>> {
 
   private final McpCorrelationHeaders mcpCorrelationHeaders = new McpCorrelationHeaders();
 
-  /// Reads the correlation and trace IDs from the MDC and the access token from the security
-  /// context of the current thread.
+  /// Reads the correlation ID from the MDC and the access token from the security context of the
+  /// current thread.
   ///
   /// @return the headers to send, without any whose value is missing
   @Override

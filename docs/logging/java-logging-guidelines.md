@@ -46,6 +46,6 @@ log.atInfo()
 
 ## Request context
 
-`CorrelationContextFilter` reads `X-Correlation-Id` and `X-Trace-Id`, validates them against `^[A-Za-z0-9-]{1,64}$`, generates a UUID for a missing or unsafe correlation or trace ID, and clears the MDC in `finally`. `RequestLoggingInterceptor` sets `route` to the URL template, for example `/api/v1/quotes/{tickerSymbol}`, and logs `apiRequestReceived` and `apiRequestCompleted`.
+`LoggingContextFilter` reads `X-Correlation-Id`, validates it against `^[A-Za-z0-9-]{1,64}$`, and generates a UUID for a missing or unsafe value. It sets `traceId` to the current OpenTelemetry span's trace ID, so a log line links to its trace in Tempo; with no valid span (for example under `bootRun`, without the Java agent) `traceId` is a random UUID. No `X-Trace-Id` header is read or sent: the Java agent carries the trace between apps in `traceparent` (ADR 0013). The filter clears the MDC in `finally`. `RequestLoggingInterceptor` sets `route` to the URL template, for example `/api/v1/quotes/{tickerSymbol}`, and logs `apiRequestReceived` and `apiRequestCompleted`.
 
 If you start threads that outlive a request, copy the MDC into them explicitly. Virtual threads do not inherit it automatically.

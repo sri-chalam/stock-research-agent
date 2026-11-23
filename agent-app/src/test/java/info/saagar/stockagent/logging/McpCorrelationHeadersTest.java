@@ -17,18 +17,9 @@ class McpCorrelationHeadersTest {
   }
 
   @Test
-  void sendsBothIdsFromTheMdc() {
+  void sendsOnlyTheCorrelationIdFromTheMdc() {
     MDC.put("correlationId", "corr-123");
     MDC.put("traceId", "trace-456");
-
-    assertThat(mcpCorrelationHeaders.get())
-        .containsExactlyInAnyOrderEntriesOf(
-            Map.of("X-Correlation-Id", "corr-123", "X-Trace-Id", "trace-456"));
-  }
-
-  @Test
-  void skipsAHeaderWhoseIdIsMissing() {
-    MDC.put("correlationId", "corr-123");
 
     assertThat(mcpCorrelationHeaders.get())
         .containsExactlyEntriesOf(Map.of("X-Correlation-Id", "corr-123"));

@@ -43,7 +43,7 @@
 | `methodName` | Method name and line number |
 | `route` | REST endpoint path; include only for log messages tied to a REST endpoint |
 | `service` | The name of the application or service |
-| `traceId` | Generated ID to trace a request across services |
+| `traceId` | OpenTelemetry trace ID of the request, shared across services and linked to its trace in Tempo (a random UUID when there is no span) |
 
 ## Sample Log Message
 

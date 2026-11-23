@@ -76,7 +76,7 @@ public final class FakeMcpServer implements AutoCloseable {
   }
 
   /// Returns the `X-Correlation-Id`, `X-Trace-Id` and `Authorization` headers of each `tools/call`,
-  /// in order.
+  /// in order. `X-Trace-Id` is recorded so tests can check the agent app does not send it.
   ///
   /// @return headers by name; a header that was not sent is absent
   public List<Map<String, String>> toolCallHeaders() {

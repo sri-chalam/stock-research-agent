@@ -72,7 +72,7 @@ class McpClientConfigTest {
   }
 
   @Test
-  void toolCallCarriesTheRequestCorrelationHeaders() {
+  void toolCallCarriesTheCorrelationIdButNotTheTraceId() {
     ToolExecutor getQuoteExecutor =
         marketDataToolsAllowing(List.of("getQuote")).toolExecutorByName("getQuote");
     MDC.put("correlationId", "corr-123");
@@ -89,7 +89,7 @@ class McpClientConfigTest {
 
     assertThat(quoteText).isEqualTo(FakeMcpServer.AAPL_QUOTE_TEXT);
     assertThat(fakeMcpServer.toolCallHeaders())
-        .containsExactly(Map.of("X-Correlation-Id", "corr-123", "X-Trace-Id", "trace-456"));
+        .containsExactly(Map.of("X-Correlation-Id", "corr-123"));
   }
 
   private static void signInAs(String bearerToken) {

@@ -226,14 +226,14 @@ class ChatLoggingTest {
   }
 
   @Test
-  void providedCorrelationIdIsLoggedAndUnsafeTraceIdIsReplaced(CapturedOutput capturedOutput)
+  void providedCorrelationIdIsLoggedAndTraceIdHeaderIsIgnored(CapturedOutput capturedOutput)
       throws Exception {
     String correlationId = "corr-" + UUID.randomUUID();
 
     HttpResponse<String> httpResponse =
         postChat(
             "price of Apple",
-            Map.of("X-Correlation-Id", correlationId, "X-Trace-Id", "unsafe<script>"));
+            Map.of("X-Correlation-Id", correlationId, "X-Trace-Id", "caller-trace-id"));
 
     assertThat(httpResponse.statusCode()).isEqualTo(200);
     List<Map<String, Object>> logLines = logLinesFor(capturedOutput, correlationId);
@@ -313,7 +313,7 @@ class ChatLoggingTest {
   }
 
   @Test
-  void correlationIdIsForwardedToTheMcpServer() throws Exception {
+  void correlationIdButNotTraceIdIsForwardedToTheMcpServer() throws Exception {
     String correlationId = "corr-" + UUID.randomUUID();
 
     HttpResponse<String> httpResponse =
@@ -324,7 +324,7 @@ class ChatLoggingTest {
         .anySatisfy(
             toolCallHeaders -> {
               assertThat(toolCallHeaders).containsEntry("X-Correlation-Id", correlationId);
-              assertThat(toolCallHeaders.get("X-Trace-Id")).matches(UUID_PATTERN);
+              assertThat(toolCallHeaders).doesNotContainKey("X-Trace-Id");
             });
   }
 

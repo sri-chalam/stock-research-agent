@@ -11,8 +11,8 @@ import org.springframework.context.annotation.Configuration;
 /// MCP clients for our MCP servers.
 ///
 /// Each client initializes in its constructor, so the app fails to start when one of the servers is
-/// not reachable. Each request carries the caller's correlation and trace IDs and, inside a chat
-/// request, the user's bearer token, forwarded unchanged to every server (Option A, ADR 0001).
+/// not reachable. Each request carries the caller's correlation ID and, inside a chat request, the
+/// user's bearer token, forwarded unchanged to every server (Option A, ADR 0001).
 @Configuration
 @EnableConfigurationProperties(McpServerProperties.class)
 public class McpClientConfig {

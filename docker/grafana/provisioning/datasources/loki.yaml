@@ -9,3 +9,14 @@ datasources:
     url: http://loki:3100
     isDefault: true
     editable: false
+    jsonData:
+      # A log line's traceId opens its trace in Tempo (ADR 0013). The regex matches OTel trace IDs
+      # only (32 hex characters), so the UUID fallback used without a span gets no link. `$$` escapes
+      # Grafana's env var expansion in provisioning files.
+      derivedFields:
+        - name: traceId
+          matcherType: regex
+          matcherRegex: '"traceId":"([0-9a-f]{32})"'
+          datasourceUid: tempo
+          url: "$${__value.raw}"
+          urlDisplayLabel: View trace
