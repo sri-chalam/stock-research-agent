@@ -25,3 +25,11 @@ gradle-app.setting
 
 # Local secrets for Docker Compose (see .env.example)
 .env
+
+# Users related to Claude are here
+.env.claude
+
+# WorkOS test-user tokens saved by scripts/workos-token.sh
+.tokens/
+
+*.swp

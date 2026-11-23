@@ -140,6 +140,19 @@ docker compose down                                   # stop and remove the stac
 
 Service names: `agent-app`, `market-data-mcp`, `filings-mcp`, `portfolio-mcp`.
 
+### Test a feature end to end as a signed-in user
+
+Two WorkOS test users (1 and 2) let Claude call the running Docker stack with real tokens. Their credentials and `sub` values come from the environment (`~/.zshenv`); `portfolio-mcp` seeds user 1 with demo user 1's portfolio and user 2 with demo user 2's (see `DemoPortfolioSeeder` for the expected holdings and watchlists).
+
+```bash
+scripts/chat-as.sh 1 "What stocks do I hold?"        # POST /api/chat as test user 1; prints JSON + HTTP status
+curl -H @"$(scripts/workos-token.sh 2)" ...          # any other call: the script prints a curl header file path
+```
+
+- `workos-token.sh` reuses the saved token in `.tokens/` (git-ignored) while it has more than 5 minutes left.
+- Never print, `cat` or log a token, the header files, or the `WORKOS_API_KEY` / `CLAUDE_TEST_USER_*` values.
+- After a change, rebuild the affected app (`docker compose up -d --build --no-deps <service>`), then check the answer, `toolsCalled`, and the `answerProvenance` log line.
+
 ## 5. Code Style
 
 - UTF-8 encoding enforced in compileJava.

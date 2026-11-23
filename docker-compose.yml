@@ -93,6 +93,8 @@ services:
       WORKOS_JWK_SET_URI: ${WORKOS_JWK_SET_URI:?set WORKOS_JWK_SET_URI in .env}
       WORKOS_DEMO_USER_1_SUB: ${WORKOS_DEMO_USER_1_SUB:?set WORKOS_DEMO_USER_1_SUB in .env}
       WORKOS_DEMO_USER_2_SUB: ${WORKOS_DEMO_USER_2_SUB:?set WORKOS_DEMO_USER_2_SUB in .env}
+      CLAUDE_TEST_USER_1_SUB: ${CLAUDE_TEST_USER_1_SUB:-}
+      CLAUDE_TEST_USER_2_SUB: ${CLAUDE_TEST_USER_2_SUB:-}
       # Tracing (ADR 0013): the shared agent config; service.name is the compose service name.
       OTEL_CONFIG_FILE: /etc/otel/otel-config.yaml
       OTEL_SERVICE_NAME: portfolio-mcp
